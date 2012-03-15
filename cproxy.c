@@ -1229,6 +1229,7 @@ void cproxy_free_downstream(downstream *d) {
         free(d->config);
     }
 
+    free(d->behaviors_arr);
     free(d);
 }
 
