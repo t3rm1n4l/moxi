@@ -3169,6 +3169,7 @@ bool cproxy_on_connect_downstream_conn(conn *c) {
             }
 
             conn_set_state(c, conn_pause);
+            update_event(c, 0);
             cproxy_forward_or_error(d);
 
             return true;
