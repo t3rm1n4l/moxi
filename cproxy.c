@@ -1140,6 +1140,17 @@ bool cproxy_release_downstream(downstream *d, bool force) {
     d->multiget = NULL;
     d->merger = NULL;
 
+    // TODO: Consider adding a downstream->prev backpointer
+    //       or doubly-linked list to save on this scan.
+    //
+    d->ptd->downstream_reserved =
+        downstream_list_remove(d->ptd->downstream_reserved, d);
+    d->ptd->downstream_released =
+        downstream_list_remove(d->ptd->downstream_released, d);
+
+    bool found = zstored_downstream_waiting_remove(d);
+    assert(!found);
+
     int n = mcs_server_count(&d->mst);
 
     for (int i = 0; i < n; i++) {
@@ -1154,17 +1165,6 @@ bool cproxy_release_downstream(downstream *d, bool force) {
     // proxy config, go back onto the available, released downstream list.
     //
     if (cproxy_check_downstream_config(d) || force) {
-        // TODO: Consider adding a downstream->prev backpointer
-        //       or doubly-linked list to save on this scan.
-        //
-        d->ptd->downstream_reserved =
-            downstream_list_remove(d->ptd->downstream_reserved, d);
-        d->ptd->downstream_released =
-            downstream_list_remove(d->ptd->downstream_released, d);
-
-        bool found = zstored_downstream_waiting_remove(d);
-        assert(!found);
-
         d->next = d->ptd->downstream_released;
         d->ptd->downstream_released = d;
 
@@ -3472,6 +3472,8 @@ void zstored_release_downstream_conn(conn *dc, bool closing) {
                 d_head->next_waiting = NULL;
 
                 d_head->ptd->stats.stats.tot_downstream_conn_queue_remove++;
+
+                cproxy_clear_timeout(d_head);
 
                 cproxy_forward_or_error(d_head);
             }
