@@ -573,6 +573,8 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
                      add_iov(c, str_cas, strlen(str_cas)) == 0) &&
                     (uc->noreply == false ||
                      add_iov(c, " noreply", 8) == 0) &&
+                    (uc->returncas == false ||
+                     add_iov(c, " returncas", 10) == 0) &&
                     add_iov(c, ITEM_data(it) - 2, it->nbytes + 2) == 0) {
                     conn_set_state(c, conn_mwrite);
                     c->write_and_go = conn_new_cmd;

@@ -470,6 +470,8 @@ struct conn {
         size_t offset;
     } stats;
 
+    bool   returncas;   /* True if the cas should be sent. */
+
     /* Binary protocol stuff */
     /* This is where the binary header goes */
     protocol_binary_request_header binary_header;

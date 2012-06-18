@@ -427,6 +427,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     c->iovused = 0;
     c->msgcurr = 0;
     c->msgused = 0;
+    c->returncas = false;
 
     c->write_and_go = init_state;
     c->write_and_free = 0;
@@ -1972,6 +1973,7 @@ void reset_cmd_handler(conn *c) {
     c->cmd = -1;
     c->cmd_curr = -1;
     c->substate = bin_no_state;
+    c->returncas = false;
     conn_cleanup(c);
     conn_shrink(c);
     if (c->rbytes > 0) {
@@ -2189,6 +2191,7 @@ static void write_and_free(conn *c, char *buf, int bytes) {
     }
 }
 
+/*checks for noreply and returning new cas. if returncas is set, return with new cas value*/
 void set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens) {
     int noreply_index = ntokens - 2;
 
@@ -2201,9 +2204,12 @@ void set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens) {
       malformed line for "noreply" option is not reliable anyway, so
       it can't be helped.
     */
-    if (tokens[noreply_index].value
-        && strcmp(tokens[noreply_index].value, "noreply") == 0) {
-        c->noreply = true;
+    if (tokens[noreply_index].value) {
+        if (strcmp(tokens[noreply_index].value, "noreply") == 0) {
+            c->noreply = true;
+        } else if (strcmp(tokens[noreply_index].value, "returncas") == 0) {
+            c->returncas = true;
+        }
     }
 }
 
