@@ -126,6 +126,9 @@
 #define APPEND_NUM_STAT(num, name, fmt, val) \
     APPEND_NUM_FMT_STAT("%d:%s", num, name, fmt, val)
 
+/* lock file to ensure only one instance of moxi runs */
+#define MOXI_LOCK_FILE "/tmp/.moxi.lock"
+
 /**
  * Callback for any function producing stats.
  *

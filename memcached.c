@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <sys/file.h>
 
 /* some POSIX systems need the following definition
  * to get mlockall flags out of sys/mman.h.  */
@@ -4567,6 +4568,10 @@ int main (int argc, char **argv) {
     /* listening sockets */
     static int *l_socket = NULL;
 
+    /* lock fd for ensuring only one mcmux process is active */
+    int lock_fd = 0;
+    struct flock moxi_lock;
+
     /* udp socket */
     static int *u_socket = NULL;
 
@@ -4766,6 +4771,23 @@ int main (int argc, char **argv) {
         }
     }
 
+    /*                                                                                           
+     * check if there is another instance of mcmux already running. if so                        
+     * then exit                                                                                 
+     */
+    if ((lock_fd = open(MOXI_LOCK_FILE, O_RDWR | O_CREAT)) == -1) {
+        fprintf(stderr, "Cannot open file %s. %s\n", MOXI_LOCK_FILE, strerror(errno));
+        return 1;
+    }
+
+    bzero(&moxi_lock, sizeof(struct flock));
+    moxi_lock.l_type = F_WRLCK;
+
+    if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {
+        fprintf(stderr, "File locked, another instance of moxi already running ?\n");
+        return 1;
+    }
+
 #ifndef MAIN_CHECK
     /*
      * initalize log file
@@ -4880,9 +4902,25 @@ int main (int argc, char **argv) {
         if (sigignore(SIGHUP) == -1) {
             perror("Failed to ignore SIGHUP");
         }
+        /* release lock before daemonizing (sic) */
+        moxi_lock.l_type = F_UNLCK;
+        if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {
+            fprintf(stderr, "Failed to unlock. %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
         if (daemonize(maxcore, settings.verbose) == -1) {
             moxi_log_write("failed to daemon() in order to daemonize\n");
             exit(EXIT_FAILURE);
+        }
+        /*                                                                                       
+         * reacquire lock in child process, could be racy if another mcmux                       
+         * process starts up.                                                                    
+         */
+        moxi_lock.l_type = F_WRLCK;
+        if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {
+            fprintf(stderr, "File locked, another instance of mcmux already running ?\n");
+            return 1;
         }
     }
 
