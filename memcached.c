@@ -3297,11 +3297,7 @@ static enum try_read_result try_read_network(conn *c) {
 
             gotdata = READ_DATA_RECEIVED;
             c->rbytes += res;
-            if (res == avail) {
-                continue;
-            } else {
-                break;
-            }
+            break;
         }
         if (res == 0) {
             return READ_ERROR;
