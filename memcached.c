@@ -4780,7 +4780,7 @@ int main (int argc, char **argv) {
     moxi_lock.l_type = F_WRLCK;
 
     if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {
-        fprintf(stderr, "File locked, another instance of moxi already running ?\n");
+        fprintf(stderr, "File locked, another instance of moxi already running?\n");
         return 1;
     }
 
@@ -4891,7 +4891,6 @@ int main (int argc, char **argv) {
     }
 #endif
 #endif
-
     /* daemonize if requested */
     /* if we want to ensure our ability to dump core, don't chdir to / */
     if (do_daemonize) {
@@ -4901,7 +4900,7 @@ int main (int argc, char **argv) {
         /* release lock before daemonizing (sic) */
         moxi_lock.l_type = F_UNLCK;
         if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {
-            fprintf(stderr, "Failed to unlock. %s", strerror(errno));
+            moxi_log_write("Failed to unlock. %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
 
@@ -4915,8 +4914,8 @@ int main (int argc, char **argv) {
          */
         moxi_lock.l_type = F_WRLCK;
         if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {
-            fprintf(stderr, "File locked, another instance of mcmux already running ?\n");
-            return 1;
+            moxi_log_write("File locked, another instance of mcmux already running?\n");
+            exit(EXIT_FAILURE);
         }
     }
 
