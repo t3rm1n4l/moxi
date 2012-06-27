@@ -681,6 +681,7 @@ void a2b_process_downstream_response(conn *c) {
     uint32_t keylen  = header->response.keylen;
     uint32_t bodylen = header->response.bodylen;
     uint16_t status  = header->response.status;
+    uint64_t cas  = header->response.cas;
 
     if (settings.verbose > 2) {
         moxi_log_write("<%d cproxy_process_a2b_downstream_response, cmd: %x, item: %d, status: %d\n",
@@ -878,7 +879,13 @@ void a2b_process_downstream_response(conn *c) {
 
             switch (status) {
             case PROTOCOL_BINARY_RESPONSE_SUCCESS:
-                out_string(uc, "STORED");
+                 if (uc->returncas) {
+                     char buf[100];   
+                     sprintf(buf, "STORED %llu", (unsigned long long)cas);                 
+                     out_string(uc, buf);
+                 } else {
+                     out_string(uc, "STORED");
+                }
                 break;
             case PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS:
                 if (c->cmd == PROTOCOL_BINARY_CMD_ADD) {
