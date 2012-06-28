@@ -4570,7 +4570,7 @@ int main (int argc, char **argv) {
     /* listening sockets */
     static int *l_socket = NULL;
 
-    /* lock fd for ensuring only one mcmux process is active */
+    /* lock fd for ensuring only one moxi process is active */
     int lock_fd = 0;
     struct flock moxi_lock;
 
@@ -4774,7 +4774,7 @@ int main (int argc, char **argv) {
     }
 
     /*                                                                                           
-     * check if there is another instance of mcmux already running. if so                        
+     * check if there is another instance of moxi already running. if so                        
      * then exit                                                                                 
      */
     if ((lock_fd = open(MOXI_LOCK_FILE, O_RDWR | O_CREAT)) == -1) {
@@ -4915,12 +4915,12 @@ int main (int argc, char **argv) {
             exit(EXIT_FAILURE);
         }
         /*                                                                                       
-         * reacquire lock in child process, could be racy if another mcmux                       
+         * reacquire lock in child process, could be racy if another moxi
          * process starts up.                                                                    
          */
         moxi_lock.l_type = F_WRLCK;
         if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {
-            moxi_log_write("File locked, another instance of mcmux already running?\n");
+            moxi_log_write("File locked, another instance of moxi already running?\n");
             exit(EXIT_FAILURE);
         }
     }
