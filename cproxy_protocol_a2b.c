@@ -879,12 +879,12 @@ void a2b_process_downstream_response(conn *c) {
 
             switch (status) {
             case PROTOCOL_BINARY_RESPONSE_SUCCESS:
-                 if (uc->returncas) {
-                     char buf[100];   
-                     sprintf(buf, "STORED %llu", (unsigned long long)cas);                 
-                     out_string(uc, buf);
-                 } else {
-                     out_string(uc, "STORED");
+                if (uc->returncas) {
+                    char buf[100];   
+                    sprintf(buf, "STORED %llu", (unsigned long long)cas);                 
+                    out_string(uc, buf);
+                } else {
+                    out_string(uc, "STORED");
                 }
                 break;
             case PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS:
