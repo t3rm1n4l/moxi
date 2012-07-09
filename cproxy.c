@@ -71,24 +71,6 @@ bool zstored_downstream_waiting_add(downstream *d, LIBEVENT_THREAD *thread,
 
 bool zstored_downstream_waiting_remove(downstream *d);
 
-typedef struct {
-    conn      *dc;          // Linked-list of available downstream conns.
-    uint32_t   dc_acquired; // Count of acquired (in-use) downstream conns.
-    char      *host_ident;
-    uint32_t   error_count;
-    uint64_t   error_time;
-
-    // Head & tail of singly linked-list/queue, using
-    // downstream->next_waiting pointers, where we've reached
-    // downstream_conn_max, so there are waiting downstreams.
-    //
-    downstream *downstream_waiting_head;
-    downstream *downstream_waiting_tail;
-} zstored_downstream_conns;
-
-zstored_downstream_conns *zstored_get_downstream_conns(LIBEVENT_THREAD *thread,
-                                                       const char *host_ident);
-
 bool cproxy_forward_or_error(downstream *d);
 
 int delink_from_downstream_conns(conn *c);
@@ -1264,6 +1246,7 @@ downstream *cproxy_create_downstream(char *config,
     if (d != NULL &&
         config != NULL &&
         config[0] != '\0') {
+
         d->config        = strdup(config);
         d->config_ver    = config_ver;
         d->behaviors_num = behavior_pool->num;
@@ -1754,8 +1737,41 @@ int cproxy_server_index(downstream *d, char *key, size_t key_length,
     return (int) mcs_key_hash(&d->mst, key, key_length, vbucket);
 }
 
+static void create_options_for_downstream(char *options, int *options_len) {
+
+    int buflen = *options_len;
+    *options_len = snprintf(options, buflen, "options version=%s DIAlgo=%s", VERSION, DI_CHKSUM_CRC_STR);
+    if (*options_len >= buflen) {
+        fprintf(stderr, "Error creating the options command, buffer too small," 
+                " options len = %d, buffer len = %d\n", *options_len, buflen);
+        *options_len = buflen;
+    }
+}
+
+static void send_options_downstream(downstream *d, conn *c) {
+    char options[MAX_OPTIONS_LEN];
+    int options_len = MAX_OPTIONS_LEN - 1;
+
+    if (settings.verbose > 1)
+        moxi_log_write("send_options_downstream\n");
+
+    conn_set_state(c, conn_pause);
+
+    create_options_for_downstream(options, &options_len); 
+
+    if (settings.verbose > 1)
+        moxi_log_write("send_options_downstream options=%s\n",options);
+
+    zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+    assert( conns != NULL );
+    conns->waiting_for_options = true;
+
+    cproxy_forward_a2a_simple_downstream(d, options, c);
+} 
+
 void cproxy_assign_downstream(proxy_td *ptd) {
     assert(ptd != NULL);
+    conn *uc = NULL;
 
     if (settings.verbose > 2) {
         moxi_log_write("assign_downstream\n");
@@ -1819,6 +1835,13 @@ void cproxy_assign_downstream(proxy_td *ptd) {
         // waiting upstream conn to it.
         //
         d->upstream_conn = ptd->waiting_any_downstream_head;
+        
+        // The first thing we need from the downstream is the options response (since we need to 
+        // know whether the downstream understand checksums). We send this command if:
+        // -    we havent got an options response from the downstream yet OR
+        // -    The upstream is waiting for an options response but when we checked in the caller earlier, 
+        //          the downstream (d) didnt have the downstream options.
+
         ptd->waiting_any_downstream_head =
             ptd->waiting_any_downstream_head->next;
         if (ptd->waiting_any_downstream_head == NULL) {
@@ -3161,6 +3184,19 @@ bool cproxy_on_connect_downstream_conn(conn *c) {
                                c->sfd, c->host_ident);
             }
 
+            zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+
+            //Options, if supported, not yet received.  Issues options to downstream connection.
+            if( conns->waiting_for_options == true )
+            {
+                if (settings.verbose > 2) {
+                    moxi_log_write("%d: send_options_downstream\n", c->sfd);
+                }
+                conn_set_state(c, conn_pause);
+                send_options_downstream(d,c);
+                return true;
+            }
+
             conn_set_state(c, conn_pause);
             cproxy_forward_or_error(d);
 
@@ -3231,6 +3267,7 @@ zstored_downstream_conns *zstored_get_downstream_conns(LIBEVENT_THREAD *thread,
         conns = calloc(1, sizeof(zstored_downstream_conns));
         if (conns != NULL) {
             conns->host_ident = strdup(host_ident);
+            conns->waiting_for_options = true;
             if (conns->host_ident != NULL) {
                 genhash_store(conn_hash, conns->host_ident, conns);
             } else {

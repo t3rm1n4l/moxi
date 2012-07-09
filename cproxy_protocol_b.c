@@ -61,7 +61,7 @@ void cproxy_process_upstream_binary(conn *c) {
     char *ikey    = "u";
     int   ikeylen = 1;
 
-    c->item = item_alloc(ikey, ikeylen, 0, 0,
+    c->item = item_alloc(ikey, ikeylen, 0, 0, NULL,
                          sizeof(c->binary_header) + bodylen);
     if (c->item != NULL) {
         item *it = c->item;

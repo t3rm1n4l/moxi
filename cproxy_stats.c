@@ -303,7 +303,7 @@ void protocol_stats_foreach_write(const void *key,
                 uint16_t key_len  = line_tokens[NAME_TOKEN].length;
                 uint32_t data_len = line_tokens[VALUE_TOKEN].length;
 
-                item *it = item_alloc("s", 1, 0, 0,
+                item *it = item_alloc("s", 1, 0, 0, NULL,
                                       sizeof(protocol_binary_response_stats) + key_len + data_len);
                 if (it != NULL) {
                     protocol_binary_response_stats *header =
@@ -340,7 +340,7 @@ void protocol_stats_foreach_write(const void *key,
             return;
         }
 
-        item *it = item_alloc("s", 1, 0, 0, nline + 2);
+        item *it = item_alloc("s", 1, 0, 0, NULL, nline + 2);
         if (it != NULL) {
             strncpy(ITEM_data(it), line, nline);
             strncpy(ITEM_data(it) + nline, "\r\n", 2);
@@ -442,6 +442,12 @@ void cproxy_reset_stats(proxy_stats *ps) {
     ps->err_downstream_write_prep = 0;
     ps->tot_cmd_time = 0;
     ps->tot_cmd_count = 0;
+
+    ps->tot_upstream_chksum_mismatch = 0;
+    ps->tot_downstream_chksum_mismatch = 0;
+    ps->tot_upstream_chksum_algo_mismatch = 0;
+    ps->tot_downstream_chksum_algo_mismatch = 0;
+    ps->tot_mb_chksum_mismatch = 0;
 }
 
 void cproxy_reset_stats_cmd(proxy_stats_cmd *sc) {

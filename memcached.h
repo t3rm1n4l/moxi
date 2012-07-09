@@ -105,6 +105,9 @@
          + (item)->nsuffix + (item)->nbytes \
          + (((item)->it_flags & ITEM_CAS) ? sizeof(uint64_t) : 0))
 
+#define ITEM_chksum(item) (it->chksum.crc32.first)
+#define ITEM_chksum2(item) (it->chksum.crc32.second)
+
 #define STAT_KEY_LEN 256
 #define STAT_VAL_LEN 512
 
@@ -328,6 +331,15 @@ extern struct settings settings;
 /* temp */
 #define ITEM_SLABBED 4
 
+typedef struct _crc32 {
+    uint32_t first;
+    uint32_t second;
+}crc32_t;
+
+typedef union _chksum {
+    crc32_t crc32;
+}chksum_t;
+
 /**
  * Structure for storing items within memcached.
  */
@@ -343,6 +355,8 @@ typedef struct _stritem {
     uint8_t         it_flags;   /* ITEM_* above */
     uint8_t         slabs_clsid;/* which slab class we're in */
     uint8_t         nkey;       /* key length, w/terminating null and padding */
+    uint32_t        chksum_metadata;     /* checksum metadata (which algo in use, errors etc) */
+    chksum_t        chksum;     /* checksum */
     void * end[];
     /* if it_flags & ITEM_CAS we have 8 bytes CAS */
     /* then null-terminated key */
@@ -504,7 +518,13 @@ struct conn {
     int peer_port;
 
     const char *update_diag;
+
+    unsigned char    data_integrity_algo_in_use;    // keeps the Data integity algorithm in use on the upstream/downstream
+    bool    waiting_for_options;                    // Lets us know that the connection is waiting for an options response
+
 };
+
+enum ds_options_state_e {OPTIONS_UNKNOWN, OPTIONS_SENT, OPTIONS_RECD};
 
 extern conn *listen_conn;
 
@@ -626,7 +646,7 @@ void accept_new_conns(const bool do_accept);
 conn *conn_from_freelist(void);
 bool  conn_add_to_freelist(conn *c);
 int   is_listen_thread(void);
-item *item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbytes);
+item *item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, char *chksum, int nbytes);
 char *item_cachedump(const unsigned int slabs_clsid, const unsigned int limit, unsigned int *bytes);
 void  item_flush_expired(void);
 item *item_get(const char *key, const size_t nkey);

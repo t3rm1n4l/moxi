@@ -406,14 +406,14 @@ LIBEVENT_THREAD *thread_by_index(int i) {
 /*
  * Allocates a new item.
  */
-item *item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbytes) {
+item *item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, char *chksum, int nbytes) {
 #ifdef MOXI_ITEM_MALLOC
     // Skip past the lock, since we're using malloc.
-    return do_item_alloc(key, nkey, flags, exptime, nbytes);
+    return do_item_alloc(key, nkey, flags, exptime, chksum, nbytes);
 #else
     item *it;
     pthread_mutex_lock(&cache_lock);
-    it = do_item_alloc(key, nkey, flags, exptime, nbytes);
+    it = do_item_alloc(key, nkey, flags, exptime, chksum, nbytes);
     pthread_mutex_unlock(&cache_lock);
     return it;
 #endif

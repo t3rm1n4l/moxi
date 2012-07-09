@@ -22,6 +22,22 @@ int cproxy_init(char *cfg_str,
 
 #define CPROXY_NOT_CAS 0
 
+#define DI_CHKSUM_CRC_STR       "crc32"
+#define DI_CHKSUM_OFF_STR       "none"
+
+#define GET_CHKSUM_STR(chksum)  ((chksum == DI_CHKSUM_SUPPORTED_OFF) ? (DI_CHKSUM_OFF_STR) : ((chksum & DI_CHKSUM_CRC) ? DI_CHKSUM_CRC_STR : ""))
+#define MAX_OPTIONS_LEN         256
+#define MAX_CHKSUM_STR_LEN      20  //(metadata(8) + ':'(1) + CRC(8))
+#define CRC_ENCODED_LEN         8
+
+#define DI_CHKSUM_UNSUPPORTED   	0
+#define DI_CHKSUM_SUPPORTED_OFF     (1 << 0)
+#define DI_CHKSUM_CRC               (1 << 1)
+#define DI_CHKSUM_MISMATCH_PECL     (1 << 2)
+#define DI_CHKSUM_MISMATCH_MCMUX    (1 << 3)
+#define DI_CHKSUM_MISMATCH_MOXI     (1 << 4)
+#define DI_CHKSUM_MISMATCH_MB       (1 << 5)
+
 extern volatile uint64_t msec_current_time;
 
 uint64_t usec_now(void);
@@ -327,6 +343,13 @@ struct proxy_stats {
     uint64_t tot_cmd_count;
     uint64_t tot_local_cmd_time;
     uint64_t tot_local_cmd_count;
+
+    /* Data Integrity stats */
+    uint64_t tot_upstream_chksum_algo_mismatch;
+    uint64_t tot_upstream_chksum_mismatch;
+    uint64_t tot_downstream_chksum_algo_mismatch;
+    uint64_t tot_downstream_chksum_mismatch;
+    uint64_t tot_mb_chksum_mismatch;
 };
 
 typedef struct {
@@ -761,6 +784,29 @@ int    skey_equal(const void *v1, const void *v2);
 extern struct hash_ops strhash_ops;
 extern struct hash_ops skeyhash_ops;
 
+typedef struct {
+    conn      *dc;          // Linked-list of available downstream conns.                                                                              
+    uint32_t   dc_acquired; // Count of acquired (in-use) downstream conns.                                                                            
+    char      *host_ident;
+    uint32_t   error_count;
+    uint64_t   error_time;
+
+    // Head & tail of singly linked-list/queue, using                                                                                                  
+    // downstream->next_waiting pointers, where we've reached                                                                                          
+    // downstream_conn_max, so there are waiting downstreams.                                                                                          
+    //                                                                                                                                                 
+    downstream *downstream_waiting_head;
+    downstream *downstream_waiting_tail;
+
+    conn c;
+    unsigned char data_integrity_algo_in_use;
+    bool waiting_for_options;
+
+} zstored_downstream_conns;
+
+zstored_downstream_conns *zstored_get_downstream_conns(LIBEVENT_THREAD *thread,
+                                                       const char *host_ident);
+
 void noop_free(void *v);
 
 // Stats handling.
@@ -857,5 +903,11 @@ char *trailspace(char *s);
 char *trimstr(char *s);
 char *trimstrdup(char *s);
 bool  wordeq(char *s, char *word);
+
+void handle_upstream_options(conn *uc, char *options);
+void parse_options(conn *c, char *options);
+void get_downstream_options(conn *uc);
+void set_options_in_use(downstream *ds, conn *uc, conn *dc);
+void send_options_upstream(conn *uc);
 
 #endif // CPROXY_H

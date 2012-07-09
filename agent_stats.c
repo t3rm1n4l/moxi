@@ -658,6 +658,18 @@ static void proxy_stats_dump_pstd_stats(ADD_STAT add_stats,
     APPEND_PREFIX_STAT("tot_local_cmd_count",
               "%llu", (long long unsigned int) pstats->tot_local_cmd_count);
 
+    /* Data Integrity stats */
+    APPEND_PREFIX_STAT("tot_upstream_chksum_mismatch",
+              "%llu", (long long unsigned int) pstats->tot_upstream_chksum_mismatch);
+    APPEND_PREFIX_STAT("tot_downstream_chksum_mismatch",
+              "%llu", (long long unsigned int) pstats->tot_downstream_chksum_mismatch);
+    APPEND_PREFIX_STAT("tot_upstream_chksum_algo_mismatch",
+              "%llu", (long long unsigned int) pstats->tot_upstream_chksum_algo_mismatch);
+    APPEND_PREFIX_STAT("tot_downstream_chksum_algo_mismatch",
+              "%llu", (long long unsigned int) pstats->tot_downstream_chksum_algo_mismatch);
+    APPEND_PREFIX_STAT("tot_mb_chksum_mismatch",
+              "%llu", (long long unsigned int) pstats->tot_mb_chksum_mismatch);
+
 }
 
 static void proxy_stats_dump_stats_cmd(ADD_STAT add_stats, conn *c, bool do_zeros,
@@ -1307,6 +1319,13 @@ static void add_proxy_stats(proxy_stats *agg, proxy_stats *x) {
     agg->tot_cmd_count            += x->tot_cmd_count;
     agg->tot_local_cmd_time       += x->tot_local_cmd_time;
     agg->tot_local_cmd_count      += x->tot_local_cmd_count;
+
+    /* Data Integrity stats */
+    agg->tot_upstream_chksum_mismatch        += x->tot_upstream_chksum_mismatch;
+    agg->tot_downstream_chksum_mismatch      += x->tot_downstream_chksum_mismatch;
+    agg->tot_upstream_chksum_algo_mismatch   += x->tot_upstream_chksum_algo_mismatch;
+    agg->tot_downstream_chksum_algo_mismatch += x->tot_downstream_chksum_algo_mismatch;
+    agg->tot_mb_chksum_mismatch              += x->tot_mb_chksum_mismatch;
 }
 
 static void add_stats_cmd(proxy_stats_cmd *agg,
@@ -1595,6 +1614,18 @@ void map_pstd_foreach_emit(const void *k,
     more_stat("tot_local_cmd_count",
               pstd->stats.tot_local_cmd_count);
 
+    /* Data Integrity stats */
+    more_stat("tot_upstream_chksum_mismatch",
+              pstd->stats.tot_upstream_chksum_mismatch);
+    more_stat("tot_downstream_chksum_mismatch",
+              pstd->stats.tot_downstream_chksum_mismatch);
+    more_stat("tot_upstream_chksum_algo_mismatch",
+              pstd->stats.tot_upstream_chksum_algo_mismatch);
+    more_stat("tot_downstream_chksum_algo_mismatch",
+              pstd->stats.tot_downstream_chksum_algo_mismatch);
+    more_stat("tot_mb_chksum_mismatch",
+              pstd->stats.tot_mb_chksum_mismatch);
+    
     snprintf(buf_key, sizeof(buf_key), "%s:stats_cmd_", name);
     emit_proxy_stats_cmd(emit->result, buf_key, "%s_%s_%s", pstd->stats_cmd);
 }

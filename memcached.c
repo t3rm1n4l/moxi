@@ -362,6 +362,9 @@ conn *conn_new(const int sfd, enum conn_states init_state,
         c->msgsize = MSG_LIST_INITIAL;
         c->hdrsize = 0;
 
+        c->data_integrity_algo_in_use = DI_CHKSUM_UNSUPPORTED;
+        c->waiting_for_options = false;
+
         c->rbuf = (char *)malloc((size_t)c->rsize);
         c->wbuf = (char *)malloc((size_t)c->wsize);
         c->ilist = (item **)malloc(sizeof(item *) * c->isize);
@@ -428,6 +431,8 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     c->msgcurr = 0;
     c->msgused = 0;
     c->returncas = false;
+    c->data_integrity_algo_in_use = DI_CHKSUM_UNSUPPORTED;
+    c->waiting_for_options = false;
 
     c->write_and_go = init_state;
     c->write_and_free = 0;
@@ -1139,6 +1144,7 @@ static void complete_incr_bin(conn *c) {
         /* Save some room for the response */
         rsp->message.body.value = mc_swap64(req->message.body.initial);
         it = item_alloc(key, nkey, 0, realtime(req->message.body.expiration),
+                        NULL,
                         INCR_MAX_STORAGE_LEN);
 
         if (it != NULL) {
@@ -1770,7 +1776,7 @@ static void process_bin_update(conn *c) {
     }
 
     it = item_alloc(key, nkey, req->message.body.flags,
-            c->funcs->conn_realtime(req->message.body.expiration), vlen+2);
+                    c->funcs->conn_realtime(req->message.body.expiration), NULL, vlen+2);
 
     if (it == 0) {
         if (! item_size_ok(nkey, req->message.body.flags, vlen + 2)) {
@@ -1841,7 +1847,7 @@ static void process_bin_append_prepend(conn *c) {
         stats_prefix_record_set(key, nkey);
     }
 
-    it = item_alloc(key, nkey, 0, 0, vlen+2);
+    it = item_alloc(key, nkey, 0, 0, NULL, vlen+2);
 
     if (it == 0) {
         if (! item_size_ok(nkey, 0, vlen + 2)) {
@@ -2068,7 +2074,7 @@ enum store_item_type do_store_item(item *it, int comm, conn *c) {
 
                 flags = (int) strtol(ITEM_suffix(old_it), (char **) NULL, 10);
 
-                new_it = do_item_alloc(key, it->nkey, flags, old_it->exptime, it->nbytes + old_it->nbytes - 2 /* CRLF */);
+                new_it = do_item_alloc(key, it->nkey, flags, old_it->exptime, NULL, it->nbytes + old_it->nbytes - 2 /* CRLF */);
 
                 if (new_it == NULL) {
                     /* SERVER_ERROR out of memory */
@@ -2635,6 +2641,11 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     return;
 }
 
+// The set command header is of the form
+// <key> <flags> <expiry time> [<CRC>] <value_len> [<CAS>] 
+// CRC will only be present if the upstream understands checksums
+// CAS will be present only for CAS command
+
 void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int comm, bool handle_cas) {
     char *key;
     size_t nkey;
@@ -2644,6 +2655,12 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     int vlen;
     uint64_t req_cas_id=0;
     item *it;
+    char *chksum_str = NULL;
+    int offset = 0;
+
+#define VAL_LEN_INDEX   4
+#define CHKSUM_INDEX	5 
+#define CAS_INDEX       (5 + offset)
 
     assert(c != NULL);
 
@@ -2657,10 +2674,19 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
 
+    if (c->data_integrity_algo_in_use != DI_CHKSUM_UNSUPPORTED) {
+        offset++;
+        chksum_str = tokens[CHKSUM_INDEX].value;
+    }
+
     if (! (safe_strtoul(tokens[2].value, (uint32_t *)&flags)
-           && safe_strtol(tokens[3].value, &exptime_int)
-           && safe_strtol(tokens[4].value, (int32_t *)&vlen))) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+           && safe_strtol(tokens[3].value, &exptime_int))) {
+        out_string(c, "CLIENT_ERROR bad command line format (flags and/or exptime)");
+        return;
+    }
+
+    if (!safe_strtol(tokens[VAL_LEN_INDEX].value, (int32_t *)&vlen)) {
+        out_string(c, "CLIENT_ERROR bad command line format (value length)");
         return;
     }
 
@@ -2685,10 +2711,14 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
         stats_prefix_record_set(key, nkey);
     }
 
-    it = item_alloc(key, nkey, flags, c->funcs->conn_realtime(exptime), vlen);
+    it = item_alloc(key, nkey, flags, c->funcs->conn_realtime(exptime), chksum_str, vlen);
 
     if (it == 0) {
-        if (! item_size_ok(nkey, flags, vlen))
+        item tmp_item;
+        if (parse_chksum(chksum_str, &tmp_item) == false) {
+            out_string(c, "SERVER_ERROR checksum failed, error parsing checksum");
+        }
+        else if (! item_size_ok(nkey, flags, vlen))
             out_string(c, "SERVER_ERROR object too large for cache");
         else
             out_string(c, "SERVER_ERROR out of memory storing object");
@@ -2715,6 +2745,11 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     c->rlbytes = it->nbytes;
     c->cmd = comm;
     conn_set_state(c, conn_nread);
+
+#undef CHKSUM_INDEX
+#undef VAL_LEN_INDEX
+#undef CAS_INDEX
+
 }
 
 static void process_arithmetic_command(conn *c, token_t *tokens, const size_t ntokens, const bool incr) {
@@ -2816,7 +2851,7 @@ enum delta_result_type do_add_delta(conn *c, item *it, const bool incr,
     res = strlen(buf);
     if (res + 2 > it->nbytes) { /* need to realloc */
         item *new_it;
-        new_it = do_item_alloc(ITEM_key(it), it->nkey, atoi(ITEM_suffix(it) + 1), it->exptime, res + 2 );
+        new_it = do_item_alloc(ITEM_key(it), it->nkey, atoi(ITEM_suffix(it) + 1), it->exptime, NULL, res + 2 );
         if (new_it == 0) {
             return EOM;
         }

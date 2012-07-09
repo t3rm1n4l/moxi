@@ -1,5 +1,6 @@
 /* -*- Mode: C; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 #include "memcached.h"
+#include "cproxy.h"
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -66,6 +67,35 @@ uint64_t get_cas_id(void) {
 # define DEBUG_REFCNT(it,op) do {} while(0)
 #endif
 
+// The checksum is for the form
+// <chksum_metadata>:<checksum>[:<uncompressed checksum>] 
+// The checksum metadata gives the algorithm used for checksum
+// As of now, we just support crc32
+bool parse_chksum(char *chksum_str, item *it) {
+
+    char *c1, *c2;
+    bool result = false;
+
+    ITEM_chksum(it) = 0;
+    ITEM_chksum2(it) = 0;
+
+    // First we look for the metadata
+    c1 = strchr(chksum_str, ':');
+    if (c1 != NULL) {
+        result = safe_strtoul_hex(chksum_str, &(it->chksum_metadata));
+        if (result == true && !(it->chksum_metadata & DI_CHKSUM_SUPPORTED_OFF)) {
+            // Look for the first checksum
+            result = safe_strtoul_hex(c1+1, &(ITEM_chksum(it)));
+            if (result == true && (c2 = strchr(c1+1, ':')) != NULL) {
+                // Look for the second checksum (optional)
+                result = safe_strtoul_hex(c2+1, &(ITEM_chksum2(it)));
+            }
+        }
+    }
+
+    return result;
+}
+
 /**
  * Generates the variable-sized part of the header for an object.
  *
@@ -86,7 +116,8 @@ static size_t item_make_header(const uint8_t nkey, const int flags, const int nb
 }
 
 /*@null@*/
-item *do_item_alloc(char *key, const size_t nkey, const int flags, const rel_time_t exptime, const int nbytes) {
+item *do_item_alloc(char *key, const size_t nkey, const int flags,
+                    const rel_time_t exptime, char *chksum_str, const int nbytes) {
     uint8_t nsuffix;
     char suffix[40];
     size_t ntotal = item_make_header(nkey + 1, flags, nbytes, suffix, &nsuffix);
@@ -113,6 +144,14 @@ item *do_item_alloc(char *key, const size_t nkey, const int flags, const rel_tim
         itx->exptime = exptime;
         memcpy(ITEM_suffix(itx), suffix, (size_t)nsuffix);
         itx->nsuffix = nsuffix;
+
+        itx->chksum_metadata = DI_CHKSUM_UNSUPPORTED;
+        if (chksum_str && parse_chksum(chksum_str, itx) == false) {
+            if (settings.verbose > 1)
+                fprintf(stderr, "Invalid checksum format %s", chksum_str);
+            item_free(itx);
+            return NULL;
+        }
     }
 
     return itx;
@@ -224,6 +263,13 @@ item *do_item_alloc(char *key, const size_t nkey, const int flags, const rel_tim
     it->exptime = exptime;
     memcpy(ITEM_suffix(it), suffix, (size_t)nsuffix);
     it->nsuffix = nsuffix;
+    it->chksum_metadata = DI_CHKSUM_UNSUPPORTED;
+    if (chksum_str && parse_chksum(chksum_str, it) == false) {
+        if (settings.verbose > 1)
+            fprintf(stderr, "Invalid checksum format %s", chksum_str);
+        item_free(it);
+        return NULL;
+    }
     return it;
 #endif
 }

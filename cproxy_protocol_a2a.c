@@ -9,15 +9,19 @@
 #include "cproxy.h"
 #include "work.h"
 #include "log.h"
+#include <stdlib.h>
 
 // Internal declarations.
 //
 #define KEY_TOKEN  1
-#define MAX_TOKENS 8
+#define MAX_TOKENS 9
+
+extern bool cproxy_forward_or_error(downstream *d);
 
 int a2a_multiget_start(conn *c, char *cmd, int cmd_len);
 int a2a_multiget_skey(conn *c, char *skey, int skey_len, int vbucket, int key_index);
 int a2a_multiget_end(conn *c);
+static void create_options_for_upstream(conn *c, char *options, int *options_len);
 
 void cproxy_init_a2a() {
     // Nothing right now.
@@ -45,6 +49,8 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
     assert(d->ptd != NULL);
     assert(d->ptd->proxy != NULL);
 
+    zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+
     if (strncmp(line, "VALUE ", 6) == 0) {
         token_t      tokens[MAX_TOKENS];
         size_t       ntokens;
@@ -52,20 +58,30 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         int          clen = 0;
         int          vlen;
         uint64_t     cas = CPROXY_NOT_CAS;
+        int          offset = 0;
 
+#define FLAGS_INDEX     2
+#define VAL_LEN_INDEX   3
+#define CHKSUM_INDEX    4 
+#define CAS_INDEX       (4 + offset)
+
+        if (conns->data_integrity_algo_in_use != DI_CHKSUM_UNSUPPORTED)
+            offset++;
         ntokens = scan_tokens(line, tokens, MAX_TOKENS, &clen);
         if (ntokens >= 5 && // Accounts for extra termimation token.
-            ntokens <= 6 &&
+            ntokens <= 7 &&
             tokens[KEY_TOKEN].length <= KEY_MAX_LENGTH &&
-            safe_strtoul(tokens[2].value, (uint32_t *) &flags) &&
-            safe_strtoul(tokens[3].value, (uint32_t *) &vlen)) {
+            safe_strtoul(tokens[FLAGS_INDEX].value, (uint32_t *) &flags) &&
+            safe_strtoul(tokens[VAL_LEN_INDEX].value, (uint32_t *) &vlen)) {
             char  *key  = tokens[KEY_TOKEN].value;
             size_t nkey = tokens[KEY_TOKEN].length;
+            char *chksum = (conns->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ? NULL : 
+                tokens[CHKSUM_INDEX].value;
 
-            item *it = item_alloc(key, nkey, flags, 0, vlen + 2);
+            item *it = item_alloc(key, nkey, flags, 0, chksum, vlen + 2);
             if (it != NULL) {
-                if (ntokens == 5 ||
-                    safe_strtoull(tokens[4].value, &cas)) {
+                if (ntokens == CAS_INDEX + 1 ||
+                    safe_strtoull(tokens[CAS_INDEX].value, &cas)) {
                     ITEM_set_cas(it, cas);
 
                     c->item = it;
@@ -82,8 +98,21 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
                     }
                 }
             } else {
-                if (settings.verbose > 1) {
-                    moxi_log_write("cproxy could not item_alloc size %u\n",
+                item tmp_item;
+                conn *uc = d->upstream_conn;
+
+                if (uc != NULL && parse_chksum(chksum, &tmp_item) == false) {
+                    out_string(uc, "SERVER_ERROR checksum failed, error parsing checksum");
+                    if (!update_event(uc, EV_WRITE | EV_PERSIST)) {
+                        if (settings.verbose > 1)
+                            fprintf(stderr,
+                                    "Can't update upstream write event\n");
+                        cproxy_close_conn(uc);
+                    }
+                }
+                else {
+                    if (settings.verbose > 1)
+                    fprintf(stderr, "cproxy could not item_alloc size %u\n",
                             vlen + 2);
                 }
             }
@@ -137,7 +166,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
                 //
                 int nline = strlen(line);
 
-                item *it = item_alloc("s", 1, 0, 0, nline + 2);
+                item *it = item_alloc("s", 1, 0, 0, NULL, nline + 2);
                 if (it != NULL) {
                     strncpy(ITEM_data(it), line, nline);
                     strncpy(ITEM_data(it) + nline, "\r\n", 2);
@@ -156,6 +185,65 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         }
 
         conn_set_state(c, conn_new_cmd);
+      } else if (conns->waiting_for_options || strncmp(line, "options ", 7) == 0) {
+        // If we send an "options" command, we expect either:
+        // an "options" response OR
+        // an error response (if the membase is old and doesnt understand "options"
+        // In both cases, we parse the downstream response and if needed, send a response upstream.
+        char options[MAX_OPTIONS_LEN];
+        int options_len;
+        conn *uc = d->upstream_conn;
+
+        zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+
+        conn temp_dc; // temp downstream connection for use with parse_option
+
+        temp_dc.waiting_for_options        = conns->waiting_for_options;
+        temp_dc.data_integrity_algo_in_use = conns->data_integrity_algo_in_use;
+
+        parse_options(&temp_dc, line);
+
+        conns->waiting_for_options         = temp_dc.waiting_for_options;
+        conns->data_integrity_algo_in_use  = temp_dc.data_integrity_algo_in_use;
+
+        set_options_in_use(d, uc, c);
+
+        if( settings.verbose > 1 )
+            moxi_log_write("<%d cproxy_process_a2a_downstream options handling line=%s\n", c->sfd, line);
+
+        conns->waiting_for_options = false; // clear downstream state
+
+        //uc->waiting_for_options = false;
+        conn_set_state(c, conn_pause);
+
+        //UC holds the upstream command which has been suspended to inject options
+        bool upstream_waiting_for_options = uc->waiting_for_options;
+        if( upstream_waiting_for_options == false )
+        {
+            conn_set_state(d->upstream_conn, conn_pause);
+            cproxy_forward_or_error(d);
+        }
+
+        if (uc != NULL && uc->waiting_for_options == true) {
+            uc->waiting_for_options = false;
+
+            create_options_for_upstream(c, options, &options_len);
+            out_string(uc, options);
+
+            if (!update_event(uc, EV_WRITE | EV_PERSIST)) {
+                if (settings.verbose > 1)
+                    fprintf(stderr,
+                            "Can't update upstream write event\n");
+                cproxy_close_conn(uc);
+            }
+
+            if (settings.verbose > 2)
+                fprintf(stderr, "Checksum algorithm in use on upstream [%d] = [%x],\
+                        downstream [%d] = [%x]\n", 
+                        uc->sfd, uc->data_integrity_algo_in_use,
+                        c->sfd, conns->data_integrity_algo_in_use);
+
+        }
     } else if (strncmp(line, "LOCK_ERROR", 10) == 0) {
         d->upstream_suffix = "LOCK_ERROR\r\n";
         d->upstream_suffix_len = 0;
@@ -196,6 +284,10 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
                                                       uc->cmd_start);
         }
     }
+
+#undef FLAGS_INDEX
+#undef VAL_LEN_INDEX
+#undef CAS_INDEX
 }
 
 /* We get here after reading the value in a VALUE reply.
@@ -306,47 +398,51 @@ bool cproxy_forward_a2a_simple_downstream(downstream *d,
     assert(d->downstream_conns != NULL);
     assert(command != NULL);
     assert(uc != NULL);
-    assert(uc->item == NULL);
-    assert(uc->cmd_curr != (protocol_binary_command) -1);
+    //assert(uc->cmd_curr != (protocol_binary_command) -1);
     assert(d->multiget == NULL);
     assert(d->merger == NULL);
 
-    // Handles get and gets.
-    //
-    if (uc->cmd_curr == PROTOCOL_BINARY_CMD_GETK ||
-        uc->cmd_curr == PROTOCOL_BINARY_CMD_GETKQ ||
-        uc->cmd_curr == PROTOCOL_BINARY_CMD_GETLK) {
-        // Only use front_cache for 'get', not for 'gets'.
-        //
-        mcache *front_cache =
-            (command[3] == ' ') ? &d->ptd->proxy->front_cache : NULL;
+    /* Data Integrity options are received so process downstream as normal.  If not,
+       then ths is the first downstream response so it would contain options response.
+    */
+    if( strstr(command,"options") == NULL )
+    {
+        // Handles get and gets.
+        if (uc->cmd_curr == PROTOCOL_BINARY_CMD_GETK ||
+            uc->cmd_curr == PROTOCOL_BINARY_CMD_GETKQ ||
+            uc->cmd_curr == PROTOCOL_BINARY_CMD_GETLK) {
+            // Only use front_cache for 'get', not for 'gets'.
+            //
+            mcache *front_cache =
+                (command[3] == ' ') ? &d->ptd->proxy->front_cache : NULL;
 
-        return multiget_ascii_downstream(d, uc,
-                                         a2a_multiget_start,
-                                         a2a_multiget_skey,
-                                         a2a_multiget_end,
-                                         front_cache);
-    }
-
-    assert(uc->next == NULL);
-
-    if (uc->cmd_curr == PROTOCOL_BINARY_CMD_FLUSH) {
-        return cproxy_broadcast_a2a_downstream(d, command, uc,
-                                               "OK\r\n");
-    }
-
-    if (uc->cmd_curr == PROTOCOL_BINARY_CMD_STAT) {
-        if (strncmp(command + 5, " reset", 6) == 0) {
-            return cproxy_broadcast_a2a_downstream(d, command, uc,
-                                                   "RESET\r\n");
+            return multiget_ascii_downstream(d, uc,
+                                             a2a_multiget_start,
+                                             a2a_multiget_skey,
+                                             a2a_multiget_end,
+                                             front_cache);
         }
 
-        if (cproxy_broadcast_a2a_downstream(d, command, uc,
-                                            "END\r\n")) {
-            d->merger = genhash_init(512, skeyhash_ops);
-            return true;
-        } else {
-            return false;
+        assert(uc->next == NULL);
+
+        if (uc->cmd_curr == PROTOCOL_BINARY_CMD_FLUSH) {
+            return cproxy_broadcast_a2a_downstream(d, command, uc,
+                                                   "OK\r\n");
+        }
+
+        if (uc->cmd_curr == PROTOCOL_BINARY_CMD_STAT) {
+            if (strncmp(command + 5, " reset", 6) == 0) {
+                return cproxy_broadcast_a2a_downstream(d, command, uc,
+                                                       "RESET\r\n");
+            }
+
+            if (cproxy_broadcast_a2a_downstream(d, command, uc,
+                                                "END\r\n")) {
+                d->merger = genhash_init(512, skeyhash_ops);
+                return true;
+            } else {
+                return false;
+            }
         }
     }
 
@@ -365,7 +461,7 @@ bool cproxy_forward_a2a_simple_downstream(downstream *d,
 
     // Assuming we're already connected to downstream.
     //
-    if (!strcmp(command, "version")) {
+    if (!strcmp(command, "version")||strstr(command,"option")) {
         /* fake key for version command handling */
         key = "v";
         key_len = 1;
@@ -537,6 +633,8 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
     conn *c = cproxy_find_downstream_conn(d, ITEM_key(it), it->nkey, NULL);
     if (c != NULL) {
 
+        zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+
         if (cproxy_prep_conn_for_write(c)) {
             assert(c->state == conn_pause);
 
@@ -549,6 +647,8 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
             int   len_length  = it->nsuffix - len_flags - 2;
             char *str_exptime = add_conn_suffix(c);
             char *str_cas     = (cmd == NREAD_CAS ? add_conn_suffix(c) : NULL);
+            char *str_chksum = (conns->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ?
+                                    NULL : add_conn_suffix(c);
 
             if (str_flags != NULL &&
                 str_length != NULL &&
@@ -564,11 +664,24 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
                             (unsigned long long) ITEM_get_cas(it));
                 }
 
+
+                if (str_chksum != NULL) {
+                    int l = sprintf(str_chksum, " %.4x:", conns->data_integrity_algo_in_use);
+                    if ((conns->data_integrity_algo_in_use & DI_CHKSUM_SUPPORTED_OFF) == 0) {
+                        l += sprintf(str_chksum + l, "%.8x", ITEM_chksum(it));
+                        if (ITEM_chksum2(it) != 0) {
+                            sprintf(str_chksum + l, ":%.8x", ITEM_chksum2(it));
+                        }
+                    }
+                }
+
                 if (add_iov(c, verb, strlen(verb)) == 0 &&
                     add_iov(c, ITEM_key(it), it->nkey) == 0 &&
                     add_iov(c, str_flags, len_flags) == 0 &&
                     add_iov(c, str_exptime, strlen(str_exptime)) == 0 &&
                     add_iov(c, str_length, len_length) == 0 &&
+                    (str_chksum == NULL || 
+                     add_iov(c, str_chksum, strlen(str_chksum)) == 0) &&
                     (str_cas == NULL ||
                      add_iov(c, str_cas, strlen(str_cas)) == 0) &&
                     (uc->noreply == false ||
@@ -624,3 +737,100 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
     return false;
 }
 
+void set_options_in_use(downstream *ds, conn *uc, conn *dc) {
+    int downstream_di_algo = DI_CHKSUM_UNSUPPORTED;
+    int upstream_di_algo = DI_CHKSUM_UNSUPPORTED;
+    
+    zstored_downstream_conns *conns = zstored_get_downstream_conns(dc->thread, dc->host_ident);
+    assert( conns != NULL );
+
+    if (dc)
+        downstream_di_algo = conns->data_integrity_algo_in_use;
+
+    if (uc)
+        upstream_di_algo = uc->data_integrity_algo_in_use;
+
+    if(downstream_di_algo != upstream_di_algo) {
+        // If Membase doesnt understand checksums, there is no point in pecl-memcache generating them
+        if (downstream_di_algo == DI_CHKSUM_UNSUPPORTED)
+        {
+            upstream_di_algo = DI_CHKSUM_UNSUPPORTED;
+        }
+        else if (downstream_di_algo & DI_CHKSUM_SUPPORTED_OFF)
+        {
+            upstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
+        }
+        else if ((downstream_di_algo & DI_CHKSUM_CRC) && (upstream_di_algo & DI_CHKSUM_CRC))
+        {
+            upstream_di_algo = DI_CHKSUM_CRC;
+        }
+        // This is the case where either the downstream and/or upstream support 
+        // something other than CRC
+        else {
+            // No point in the downstream expecting/calculating the checksum, 
+            // the upstream wont send what it expects
+            downstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
+            // If the upstream understands checksums, switch it off, 
+            // since the downstream wont send what it expects
+            if (upstream_di_algo != DI_CHKSUM_UNSUPPORTED) {
+                upstream_di_algo = DI_CHKSUM_SUPPORTED_OFF; 
+            }
+        }
+    }
+
+    if (uc){
+        uc->data_integrity_algo_in_use = upstream_di_algo;
+    }
+
+    conns->data_integrity_algo_in_use = downstream_di_algo;
+}
+
+static void create_options_for_upstream(conn *c, char *options, int *options_len) {
+    *options_len = sprintf(options, "options version=%s", VERSION);
+    // If we dont understand some option, we obviously cannot make it into a string.
+    // So in case of new pecl and new membase that support somethig more than CRC, 
+    // and old mcmux, we will setill be using CRC 
+
+    char *chksum_str = GET_CHKSUM_STR(c->data_integrity_algo_in_use);
+    if (*chksum_str != '\0')
+        *options_len += sprintf(options + *options_len, " DIAlgo=%s", 
+                GET_CHKSUM_STR(c->data_integrity_algo_in_use));
+}
+
+
+void send_options_upstream(conn *uc) {
+
+    char options[MAX_OPTIONS_LEN];
+    int options_len;
+
+    create_options_for_upstream(uc, options, &options_len);
+    out_string(uc, options);
+}
+
+void parse_options(conn *c, char *options) {
+
+    int algo = DI_CHKSUM_UNSUPPORTED;
+
+    if(strncmp(options, "options", sizeof("options")-1) == 0) {
+        // Checksums will be unsupported if:
+        // - the downstream doesnt understan OPTIONS command OR
+        // - the downstream understands OPTIONS command but it doesnt send the DIAlgo option in the reply
+        char *di_algo =  strstr(options, "DIAlgo"); 
+        if (di_algo != NULL) {
+            char *algo_str = strchr(di_algo, '=');
+            if (algo_str != NULL && strstr(algo_str, DI_CHKSUM_CRC_STR) != NULL) {
+                algo = DI_CHKSUM_CRC;
+            }
+            else {
+                algo = DI_CHKSUM_SUPPORTED_OFF;
+            }
+        }
+    }
+    else if (strncmp(options, "ERROR unknown command", sizeof("ERROR unknown command")-1) != 0) {
+        if (settings.verbose > 1)
+            fprintf(stderr, "Incorrect response from Membase for options command. Response: [%s]\n", options);
+    }
+
+    if (c) 
+        c->data_integrity_algo_in_use = algo;
+}

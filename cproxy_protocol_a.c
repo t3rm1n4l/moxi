@@ -9,14 +9,20 @@
 #include "cproxy.h"
 #include "work.h"
 #include "log.h"
+#include "crc32.h"
 
 // Internal declarations.
 //
 #define COMMAND_TOKEN 0
-#define MAX_TOKENS    8
+#define MAX_TOKENS    9
 
 #define MAX_HOSTNAME_LEN 200
 #define MAX_PORT_LEN     8
+
+typedef struct  _strings {
+    char *data;
+    int len;
+}strings_t;
 
 void cproxy_process_upstream_ascii(conn *c, char *line) {
     assert(c != NULL);
@@ -153,7 +159,7 @@ void cproxy_process_upstream_ascii(conn *c, char *line) {
             SEEN(STATS_CMD_GET, cmd[3] == 's', 0);
         }
 
-    } else if ((ntokens == 6 || ntokens == 7) &&
+    } else if ((ntokens >= 6 || ntokens <= 8) &&
                 (false == self_command) &&
                ((strncmp(cmd, "add", 3) == 0 &&
                  (comm = NREAD_ADD) &&
@@ -190,7 +196,7 @@ void cproxy_process_upstream_ascii(conn *c, char *line) {
             }
         }
 
-    } else if ((ntokens == 7 || ntokens == 8) &&
+    } else if ((ntokens >= 7 || ntokens <= 9) &&
                (false == self_command) &&
                (strncmp(cmd, "cas", 3) == 0 &&
                 (comm = NREAD_CAS) &&
@@ -314,12 +320,115 @@ void cproxy_process_upstream_ascii(conn *c, char *line) {
 
         // TODO: SEEN(STATS_CMD_TOUCH, false, cmd_len);
 
+    } else if (ntokens >= 2 &&
+               (strncmp(cmd, "options", 7) == 0)) {
+        handle_upstream_options(c, line);
     } else {
         out_string(c, "ERROR");
 
         SEEN(STATS_CMD_ERROR, false, cmd_len);
     }
 }
+
+void handle_upstream_options(conn *uc, char *options) {
+
+    assert( uc != NULL );
+
+    parse_options(uc, options);
+
+    // We need to get the options for this downtream
+    // get_downstream_options(uc);
+
+    uc->waiting_for_options = true;
+    proxy_td *ptd = uc->extra;
+    cproxy_pause_upstream_for_downstream(ptd,uc);
+}
+
+static unsigned int calculate_crc(strings_t *s, int count) {
+    unsigned int crc = ~0;
+    int i, p;
+
+    for (p=0; p<count; p++) {
+        for (i=0; i<s[p].len; i++) {
+            CRC32(crc, s[p].data[i]);
+        }
+    }
+    return ~crc;
+}
+
+static unsigned int get_checksum(item *it) {
+    int flags;
+    strings_t s[2];
+    safe_strtol(ITEM_suffix(it) + 1, &flags);
+    s[0].data = (char*)&flags;
+    s[0].len = sizeof(flags);
+    s[1].data = ITEM_data(it);
+    s[1].len = it->nbytes - 2;
+
+    return calculate_crc(s, sizeof(s)/sizeof(s[0]));
+}
+
+static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream) {
+
+    unsigned int calc_chksum;
+    *error_str = NULL;
+
+    // If the we have agreed to no checksum, then nothing to verify
+    if ( (c->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) || 
+            (c->data_integrity_algo_in_use & DI_CHKSUM_SUPPORTED_OFF) )
+        return true;
+    
+    // If the metadata says checksums are off for this key, we will let it pass
+    if (it->chksum_metadata & DI_CHKSUM_SUPPORTED_OFF)
+        return true;
+
+    proxy_td *ptd = c->extra;
+    assert(ptd != NULL);
+
+    // The command header should have the same checksum as that in c->data_integrity_algo_in_use
+    if ((it->chksum_metadata & c->data_integrity_algo_in_use) == 0) {
+        (is_upstream) ? (ptd->stats.stats.tot_upstream_chksum_algo_mismatch++) : (ptd->stats.stats.tot_downstream_chksum_algo_mismatch++);
+        it->chksum_metadata |= DI_CHKSUM_MISMATCH_MOXI;
+
+        if (settings.verbose > 1)
+                    fprintf(stderr,
+                            "Unverifiable data integrity algorithm in metadata (%x) for key %s\n",
+                            it->chksum_metadata, ITEM_key(it));
+        
+        *error_str = "SERVER_ERROR checksum failed, unknown data integrity algorithm in metadata";
+        return false;
+    }
+
+    // Membase has already detected a failure, we dont need to recheck
+    if (it->chksum_metadata & DI_CHKSUM_MISMATCH_MB) {
+        ptd->stats.stats.tot_mb_chksum_mismatch++;
+        *error_str = "SERVER_ERROR checksum failed at membase";
+        if (settings.verbose > 1)
+                    fprintf(stderr,
+                            "Checksum mismatch at membase for key %s\n",
+                            ITEM_key(it));
+        return false;
+    }
+
+    calc_chksum = get_checksum(it);
+    
+    if (calc_chksum != ITEM_chksum(it)) {
+        (is_upstream) ? (ptd->stats.stats.tot_upstream_chksum_mismatch++) : (ptd->stats.stats.tot_downstream_chksum_mismatch++);
+
+        // Mismatch, we need to return the data to pecl-memcache, 
+        // with the mismatch flag set in checksum metadata
+        it->chksum_metadata |= DI_CHKSUM_MISMATCH_MOXI;
+        *error_str = "SERVER_ERROR checksum failed at mcmux";
+        if (settings.verbose > 1)
+                    fprintf(stderr,
+                            "ERROR: Checksum mismatch at mcmux for key %s, " 
+                            "header checksum %x, calculated chekcsum %x\n",
+                            ITEM_key(it), ITEM_chksum(it), calc_chksum);
+        return false;
+    }
+
+    return true;
+} 
 
 /* We get here after reading the value in set/add/replace
  * commands. The command has been stored in c->cmd, and
@@ -338,11 +447,15 @@ void cproxy_process_upstream_ascii_nread(conn *c) {
     // pthread_mutex_unlock(&c->thread->stats.mutex);
 
     if (strncmp(ITEM_data(it) + it->nbytes - 2, "\r\n", 2) == 0) {
-        proxy_td *ptd = c->extra;
-
-        assert(ptd != NULL);
-
-        cproxy_pause_upstream_for_downstream(ptd, c);
+        char *error_str = NULL;
+        if (verify_chksum(c, it, &error_str, true)) {
+            proxy_td *ptd = c->extra;
+            assert(ptd != NULL);
+            cproxy_pause_upstream_for_downstream(ptd,c);
+        }
+        else if (error_str) {
+            out_string(c, error_str);
+        }
     } else {
         out_string(c, "CLIENT_ERROR bad data chunk");
     }
@@ -361,6 +474,11 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
     assert(uc->funcs != NULL);
     assert(IS_ASCII(uc->protocol));
     assert(IS_PROXY(uc->protocol));
+    char *error_str = NULL;
+
+    // If checksums are enabled, we should verify the checksum here and send error on mismatch
+    verify_chksum(uc, it, &error_str, false);
+    // verify_chksum logs the error and sets the bit in the metadata, so nothing to do here
 
     if (settings.verbose > 2) {
         char key[KEY_MAX_LENGTH + 10];
@@ -376,43 +494,50 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
         // TODO: Need to clean up half-written add_iov()'s.
         //       Consider closing the upstream_conns?
         //
-        uint64_t cas = ITEM_get_cas(it);
-        if ((cas_emit == 0) ||
-            (cas_emit < 0 &&
-             cas == CPROXY_NOT_CAS)) {
-            if (add_conn_item(uc, it)) {
-                it->refcount++;
 
-                if (add_iov(uc, "VALUE ", 6) == 0 &&
-                    add_iov(uc, ITEM_key(it), it->nkey) == 0 &&
-                    add_iov(uc, ITEM_suffix(it),
-                            it->nsuffix + it->nbytes) == 0) {
-                    if (settings.verbose > 2) {
-                        moxi_log_write("<%d cproxy ascii item response success\n",
-                                       uc->sfd);
-                    }
-                }
+        char *str_flags   = ITEM_suffix(it);
+        char *str_length  = strchr(str_flags + 1, ' ');
+        char *str_chksum  = (uc->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ? 
+                                NULL : add_conn_suffix(uc);
+        char *cas_str;
+        int   len_flags   = str_length - str_flags;
+        int   len_length  = it->nsuffix - len_flags - 2;
+
+        if (str_chksum != NULL) {
+            int l = sprintf(str_chksum, " %.4x:", it->chksum_metadata);
+            if ((it->chksum_metadata & DI_CHKSUM_SUPPORTED_OFF) == 0) {
+                l += sprintf(str_chksum + l, "%.8x", ITEM_chksum(it));
+                //l += sprintf(str_chksum + l, "%s", "abcdefff");
+                if (ITEM_chksum2(it) != 0)
+                    sprintf(str_chksum + l, ":%.8x", ITEM_chksum2(it));
             }
-        } else {
-            char *suffix = add_conn_suffix(uc);
-            if (suffix != NULL) {
-                sprintf(suffix, " %llu\r\n", (unsigned long long) cas);
+        }
 
-                if (add_conn_item(uc, it)) {
-                    it->refcount++;
+        uint64_t cas = ITEM_get_cas(it);
+        if ((cas_emit == 0) || (cas_emit < 0 && cas == CPROXY_NOT_CAS)) {
+            cas_str = "\r\n";
+        }
+        else {
+            cas_str = add_conn_suffix(uc);
+            if (cas_str != NULL) 
+                sprintf(cas_str, " %llu\r\n", (unsigned long long) cas);
+        }
 
-                    if (add_iov(uc, "VALUE ", 6) == 0 &&
-                        add_iov(uc, ITEM_key(it), it->nkey) == 0 &&
-                        add_iov(uc, ITEM_suffix(it),
-                                it->nsuffix - 2) == 0 &&
-                        add_iov(uc, suffix, strlen(suffix)) == 0 &&
-                        add_iov(uc, ITEM_data(it), it->nbytes) == 0) {
-                        if (settings.verbose > 2) {
-                            moxi_log_write("<%d cproxy ascii item response ok\n",
-                                    uc->sfd);
-                        }
-                    }
-                }
+        if (add_conn_item(uc, it)) {
+            it->refcount++;
+
+            if (add_iov(uc, "VALUE ", 6) == 0 &&
+                    add_iov(uc, ITEM_key(it), it->nkey) == 0 &&
+                    add_iov(uc, str_flags, len_flags) == 0 &&
+                    add_iov(uc, str_length, len_length) == 0 &&
+                    (str_chksum == NULL || 
+                     add_iov(uc, str_chksum, strlen(str_chksum)) == 0) &&
+                    add_iov(uc, cas_str, strlen(cas_str)) == 0 &&
+                    add_iov(uc, ITEM_data(it), it->nbytes) == 0) {
+                if (settings.verbose > 2)
+                    fprintf(stderr,
+                            "<%d cproxy ascii item response ok\n",
+                            uc->sfd);
             }
         }
     } else {

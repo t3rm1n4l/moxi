@@ -33,6 +33,23 @@ bool safe_strtoull(const char *str, uint64_t *out) {
     return false;
 }
 
+bool safe_strtoul_hex(const char *str, uint32_t *out) {
+    char *endptr = NULL;
+    unsigned long l = 0;
+    assert(out);
+    assert(str);
+    *out = 0;
+    errno = 0;
+
+    l = strtoul(str, &endptr, 16);
+    if (errno == ERANGE) {
+        return false;
+    }
+
+    *out = l;
+    return true;
+}
+
 bool safe_strtoll(const char *str, int64_t *out) {
     assert(out != NULL);
     errno = 0;

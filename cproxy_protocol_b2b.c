@@ -276,7 +276,7 @@ bool cproxy_broadcast_b2b_downstream(downstream *d, conn *uc) {
             d->merger = genhash_init(128, skeyhash_ops);
         }
 
-        item *it = item_alloc("h", 1, 0, 0,
+        item *it = item_alloc("h", 1, 0, 0, NULL,
                               sizeof(protocol_binary_response_header));
         if (it != NULL) {
             protocol_binary_response_header *header =
@@ -360,7 +360,7 @@ void cproxy_process_b2b_downstream(conn *c) {
     char *ikey    = "q";
     int   ikeylen = 1;
 
-    c->item = item_alloc(ikey, ikeylen, 0, 0,
+    c->item = item_alloc(ikey, ikeylen, 0, 0, NULL,
                          sizeof(c->binary_header) + bodylen);
     if (c->item != NULL) {
         item *it = c->item;

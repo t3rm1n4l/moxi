@@ -463,6 +463,7 @@ void multiget_ascii_downstream_response(downstream *d, item *it) {
         while (uc != NULL) {
             // TODO: Revisit the -1 cas_emit parameter.
             //
+
             cproxy_upstream_ascii_item_response(it, uc, -1);
 
             psc_get_key->hits++;
