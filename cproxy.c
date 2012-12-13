@@ -1589,9 +1589,11 @@ bool downstream_connect_init(downstream *d, mcs_server_st *msst,
                                        usec_now() - c->cmd_start_time);
     }
 
-    int rv;
+    int rv = 0;
 
-    rv = cproxy_auth_downstream(msst, behavior, c->sfd);
+    if (!settings.enable_vbs_mode) {
+        rv = cproxy_auth_downstream(msst, behavior, c->sfd);
+    }
     if (rv == 0) {
         d->ptd->stats.stats.tot_downstream_auth++;
 

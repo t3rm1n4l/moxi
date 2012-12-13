@@ -36,6 +36,11 @@ int cproxy_init_agent(char *cfg_str,
                       proxy_behavior behavior,
                       int nthreads);
 
+int cproxy_init_vbs_agent(char *cfg_str,
+                          proxy_behavior behavior,
+                          int nthreads);
+
+
 int cproxy_init_mcmux_mode(int proxy_port,
                            proxy_behavior behavior,
                            int nthreads);
@@ -343,6 +348,13 @@ int cproxy_init(char *cfg_str,
                                       nthreads);
     }
 
+    if (settings.enable_vbs_mode) {
+        return cproxy_init_vbs_agent(cfg_str,
+                                     behavior,
+                                     nthreads);
+    }
+
+
     // Not jid format and not a URL, so it must be a simple cmd-line
     // or file-based config.
     //
@@ -352,6 +364,7 @@ int cproxy_init(char *cfg_str,
                                   behavior,
                                   nthreads);
     }
+
 
 #ifdef HAVE_CONFLATE_H
     if (settings.verbose > 2) {

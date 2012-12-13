@@ -4191,6 +4191,7 @@ static void usage(char **argv) {
 #ifdef MOXI_USE_LIBVBUCKET
     printf("  %s [FLAGS] URL1[,URL2[,URLn]]\n", m);
     printf("  %s [FLAGS] -z url=URL1[,URL2[,URLn]]\n", m);
+    printf("  %s -V server:port Source/port of vbucket server (VBS) \n" ,m);
 #endif
 #ifdef MOXI_USE_LIBMEMCACHED
     printf("  %s [FLAGS] -z LOCAL_PORT=MCHOST[:MCPORT][,MCHOST2[:MCPORT2][,*]]\n", m);
@@ -4683,6 +4684,7 @@ int main (int argc, char **argv) {
           "Y:"  /* exit when stdin closes, for windows compatibility */
           "O:"  /* log file name */
           "X"   /* run in mcmux compatiblity mode */
+          "V:"  /* connect to VBS server for vbucket map */
         ))) {
         switch (c) {
         case 'a':
@@ -4824,6 +4826,11 @@ int main (int argc, char **argv) {
             break;
         case 'X' :
             settings.enable_mcmux_mode = true;
+            break;
+
+        case 'V' :
+            settings.enable_vbs_mode = true;
+            cproxy_cfg = strdup(optarg);
             break;
 
         default:

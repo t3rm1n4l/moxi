@@ -12,6 +12,7 @@
 #include "agent.h"
 #include "log.h"
 #include "cJSON.h"
+#include "vbs_agent.h"
 
 // Integration with libconflate.
 //
@@ -276,6 +277,152 @@ int cproxy_init_agent(char *cfg_str,
     return rv;
 }
 
+int cproxy_init_vbs_agent(char *cfg_str,
+                      proxy_behavior behavior,
+                      int nthreads) {
+
+    static char hostname[100] = {0};
+    int port = 0;
+    int rv = 0;
+
+    init_extensions();
+
+    if (cfg_str == NULL) {
+        moxi_log_write("ERROR: missing cfg\n");
+        if (ml->log_mode != ERRORLOG_STDERR) {
+            fprintf(stderr, "ERROR: missing cfg\n");
+        }
+        exit(EXIT_FAILURE);
+    }
+
+    int cfg_len = strlen(cfg_str);
+    if (cfg_len <= 0) {
+        moxi_log_write("ERROR: empty cfg\n");
+        if (ml->log_mode != ERRORLOG_STDERR) {
+            fprintf(stderr, "ERROR: empty cfg\n");
+        }
+        exit(EXIT_FAILURE);
+    }
+
+
+    //extract the hostname and port from the cfg string
+    sscanf(cfg_str, "%99[^:]:%99d", hostname, &port);
+
+    if (port <= 0) {
+        moxi_log_write("ERROR: Invalid port\n");
+        if (ml->log_mode != ERRORLOG_STDERR) {
+            fprintf(stderr, "ERROR: Invalid port\n");
+        }
+        exit(EXIT_FAILURE);
+    }
+
+    if (cproxy_init_vbs_agent_start(hostname, port,
+                behavior,
+                nthreads) != NULL) {
+        rv++;
+    }
+
+    return rv;
+}
+
+int on_vbs_new_config(void *userdata, void *buf) {
+
+    assert(buf != NULL);
+
+    proxy_main *m = userdata;
+    assert(m != NULL);
+
+    LIBEVENT_THREAD *mthread = thread_by_index(0);
+    assert(mthread != NULL);
+
+    if (settings.verbose > 0) {
+        moxi_log_write("configuration received\n");
+    }
+
+    char *copy = cJSON_Print((cJSON *)buf);
+    if (copy != NULL) {
+        if (work_send(mthread->work_queue, cproxy_on_config, m, copy)) {
+            return 1;
+        }
+
+        if (settings.verbose > 1) {
+            moxi_log_write("work_send failed\n");
+        }
+
+        return 0;
+    }
+
+    if (settings.verbose > 1) {
+        moxi_log_write("failed to serialize json object\n");
+    }
+
+    return 0;
+}
+
+proxy_main *cproxy_init_vbs_agent_start(char *hostname,
+                                        int port,
+                                        proxy_behavior behavior,
+                                        int nthreads) {
+
+    if (settings.verbose > 2) {
+        moxi_log_write("cproxy_init_vbs_agent_start\n");;
+    }
+
+    proxy_main *m = cproxy_gen_proxy_main(behavior, nthreads,
+                                          PROXY_CONF_TYPE_DYNAMIC);
+    if (m != NULL) {
+        // Create a NULL_BUCKET when we're not in "FIRST_BUCKET" mode.
+        //
+        // FIRST_BUCKET mode means clients start off in the first
+        // configured bucket (and this is usually the case for
+        // standalone moxi).
+        //
+        // Otherwise (when not in FIRST_BUCKET mode)...
+        // -- new clients start off in a configured, named default
+        // bucket (whose name is usually configured to be "default"),
+        // if it exists.
+        // -- if the named default bucket doesn't exist, new
+        // clients then start off in the NULL_BUCKET.
+        //
+        if (strcmp(behavior.default_bucket_name, FIRST_BUCKET) != 0) {
+            if (settings.verbose > 2) {
+                moxi_log_write("initializing null bucket, default is: %s\n",
+                               behavior.default_bucket_name);
+            }
+
+            cproxy_init_null_bucket(m);
+        } else {
+            if (settings.verbose > 2) {
+                moxi_log_write("using first bucket\n");
+            }
+        }
+
+        vbs_config_t config;
+        memset(&config, 0, sizeof(config));
+        config.hostname = hostname;
+        config.port = port;
+        config.userdata = m;
+        config.new_config = on_vbs_new_config;
+
+        if (start_vbs_config(config)) {
+             if (settings.verbose > 2) {
+                moxi_log_write("cproxy_init_agent_start done\n");
+            }
+
+            return m;
+        }
+
+        free(m);
+    }
+
+    if (settings.verbose > 1) {
+        moxi_log_write("cproxy could not start vbs agent\n");
+    }
+
+    return NULL;
+}
+
+
 proxy_main *cproxy_init_agent_start(char *jid,
                                     char *jpw,
                                     char *dbpath,
@@ -383,6 +530,8 @@ static void cproxy_init_null_bucket(proxy_main *m) {
         }
     }
 }
+
+
 
 conflate_result on_conflate_new_config(void *userdata, kvpair_t *config) {
     assert(config != NULL);
@@ -594,6 +743,15 @@ bool cproxy_on_config_json_one(proxy_main *m, uint32_t new_config_ver,
                     cJSON_Delete(jConfig);
 
                     return rv;
+                }
+            }
+
+            if (settings.enable_vbs_mode) {
+                cJSON *proxy_port = cJSON_GetObjectItem(jConfig, "port");
+                if (proxy_port != NULL &&
+                    proxy_port->type == cJSON_Number &&
+                    proxy_port->valueint > 0) {
+                    m->behavior.port_listen = proxy_port->valueint;
                 }
             }
 
@@ -1190,8 +1348,16 @@ void cproxy_on_config(void *data0, void *data1) {
     proxy_main *m = data0;
     assert(m);
 
-    kvpair_t *kvs = data1;
-    assert(kvs);
+    kvpair_t *kvs;
+    char *config;
+
+    if (settings.enable_vbs_mode) {
+        config = data1;
+    } else {
+        kvs = data1;
+        assert(kvs);
+    }
+
     assert(is_listen_thread());
 
     m->stat_configs++;
@@ -1217,13 +1383,29 @@ void cproxy_on_config(void *data0, void *data1) {
     }
 
 #ifdef MOXI_USE_LIBVBUCKET
+
+    if (settings.enable_vbs_mode) {
+
+        if (config != NULL &&
+            strlen(config) > 0) {
+            cproxy_on_config_json(m, new_config_ver, config,
+                                  "http://vbs_server:port" );
+
+        } else {
+            moxi_log_write("ERROR: invalid, empty config from vbs server\n");
+        }
+        close_outdated_proxies(m, new_config_ver);
+        free(config);
+        return;
+    }
+
     char **urlv = get_key_values(kvs, "url"); // NULL delimited array of char *.
     char  *url  = urlv != NULL ? (urlv[0] != NULL ? urlv[0] : "") : "";
 
     char **contents = get_key_values(kvs, "contents");
     if (contents != NULL &&
         contents[0] != NULL) {
-        char *config = trimstrdup(contents[0]);
+        config = trimstrdup(contents[0]);
         if (config != NULL &&
             strlen(config) > 0) {
             cproxy_on_config_json(m, new_config_ver, config, url);
