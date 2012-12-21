@@ -132,7 +132,9 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
         assert(cmd_len == 3 || cmd_len == 4); // Either get or gets.
 
         int cas_emit = (command[3] == 's');
-
+        bool is_multiget = (command[3] != 'l');     // getl cannot be a multiget 
+                                                    // (it has only one key per command)
+    
         if (settings.verbose > 1) {
             moxi_log_write("%d: forward multiget %s (%d %d)\n",
                     uc_cur->sfd, command, cmd_len, uc_num);
@@ -234,7 +236,7 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
                     // Previously, we used to only have a map when there was more than
                     // one upstream conn.
                     //
-                    if (key_last == false &&
+                    if (key_last == false && is_multiget &&
                         d->multiget == NULL) {
                         d->multiget = genhash_init(128, skeyhash_ops);
                         if (settings.verbose > 1) {
@@ -248,7 +250,7 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
                     //
                     bool first_request = true;
 
-                    if (d->multiget != NULL) {
+                    if (is_multiget && d->multiget != NULL) {
                         if (settings.verbose > 2) {
                             char key_buf[KEY_MAX_LENGTH + 10];
                             assert(key_len <= KEY_MAX_LENGTH);
@@ -295,12 +297,14 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
                         // for ascii-to-ascii configuration.
                         //
                         emit_skey(c, key - 1, key_len + 1, vbucket, key - command);
+                        if (!is_multiget)
+                            break;      // Only one key, we are done
                     } else {
                         ptd->stats.stats.tot_multiget_keys_dedupe++;
 
                         if (settings.verbose > 1) {
                             char buf[KEY_MAX_LENGTH + 10];
-                            memcpy(buf, key, key_len);
+                            memcpy(buf, key, KEY_MAX_LENGTH);
                             buf[key_len] = '\0';
 
                             moxi_log_write("%d cproxy multiget dedpue: %s\n",
