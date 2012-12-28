@@ -4812,7 +4812,7 @@ int main (int argc, char **argv) {
      * check if there is another instance of moxi already running. if so                        
      * then exit                                                                                 
      */
-    if ((lock_fd = open(MOXI_LOCK_FILE, O_RDWR | O_CREAT)) == -1) {
+    if ((lock_fd = open(MOXI_LOCK_FILE, O_RDWR | O_CREAT, 0644)) == -1) {
         fprintf(stderr, "Cannot open file %s. %s\n", MOXI_LOCK_FILE, strerror(errno));
         return 1;
     }
