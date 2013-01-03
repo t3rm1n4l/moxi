@@ -1742,7 +1742,7 @@ static void create_options_for_downstream(char *options, int *options_len) {
     int buflen = *options_len;
     *options_len = snprintf(options, buflen, "options version=%s DIAlgo=%s", VERSION, DI_CHKSUM_CRC_STR);
     if (*options_len >= buflen) {
-        fprintf(stderr, "Error creating the options command, buffer too small," 
+        fprintf(stderr, "Error creating the options command, buffer too small,"
                 " options len = %d, buffer len = %d\n", *options_len, buflen);
         *options_len = buflen;
     }
@@ -1757,7 +1757,7 @@ static void send_options_downstream(downstream *d, conn *c) {
 
     conn_set_state(c, conn_pause);
 
-    create_options_for_downstream(options, &options_len); 
+    create_options_for_downstream(options, &options_len);
 
     if (settings.verbose > 1)
         moxi_log_write("send_options_downstream options=%s\n",options);
@@ -1767,7 +1767,7 @@ static void send_options_downstream(downstream *d, conn *c) {
     conns->waiting_for_options = true;
 
     cproxy_forward_a2a_simple_downstream(d, options, c);
-} 
+}
 
 void cproxy_assign_downstream(proxy_td *ptd) {
     assert(ptd != NULL);
@@ -1835,11 +1835,11 @@ void cproxy_assign_downstream(proxy_td *ptd) {
         // waiting upstream conn to it.
         //
         d->upstream_conn = ptd->waiting_any_downstream_head;
-        
-        // The first thing we need from the downstream is the options response (since we need to 
+
+        // The first thing we need from the downstream is the options response (since we need to
         // know whether the downstream understand checksums). We send this command if:
         // -    we havent got an options response from the downstream yet OR
-        // -    The upstream is waiting for an options response but when we checked in the caller earlier, 
+        // -    The upstream is waiting for an options response but when we checked in the caller earlier,
         //          the downstream (d) didnt have the downstream options.
 
         ptd->waiting_any_downstream_head =

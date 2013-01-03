@@ -2642,7 +2642,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 }
 
 // The set command header is of the form
-// <key> <flags> <expiry time> [<CRC>] <value_len> [<CAS>] 
+// <key> <flags> <expiry time> [<CRC>] <value_len> [<CAS>]
 // CRC will only be present if the upstream understands checksums
 // CAS will be present only for CAS command
 
@@ -2659,7 +2659,7 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     int offset = 0;
 
 #define VAL_LEN_INDEX   4
-#define CHKSUM_INDEX	5 
+#define CHKSUM_INDEX    5
 #define CAS_INDEX       (5 + offset)
 
     assert(c != NULL);
@@ -4808,9 +4808,9 @@ int main (int argc, char **argv) {
         }
     }
 
-    /*                                                                                           
-     * check if there is another instance of moxi already running. if so                        
-     * then exit                                                                                 
+    /*
+     * check if there is another instance of moxi already running. if so
+     * then exit
      */
     if ((lock_fd = open(MOXI_LOCK_FILE, O_RDWR | O_CREAT, 0644)) == -1) {
         fprintf(stderr, "Cannot open file %s. %s\n", MOXI_LOCK_FILE, strerror(errno));
@@ -4949,9 +4949,9 @@ int main (int argc, char **argv) {
             moxi_log_write("failed to daemon() in order to daemonize\n");
             exit(EXIT_FAILURE);
         }
-        /*                                                                                       
+        /*
          * reacquire lock in child process, could be racy if another moxi
-         * process starts up.                                                                    
+         * process starts up.
          */
         moxi_lock.l_type = F_WRLCK;
         if (fcntl(lock_fd, F_SETLK, &moxi_lock) == -1) {

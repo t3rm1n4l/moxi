@@ -68,7 +68,7 @@ uint64_t get_cas_id(void) {
 #endif
 
 // The checksum is for the form
-// <chksum_metadata>:<checksum>[:<uncompressed checksum>] 
+// <chksum_metadata>:<checksum>[:<uncompressed checksum>]
 // The checksum metadata gives the algorithm used for checksum
 // As of now, we just support crc32
 // Return value:

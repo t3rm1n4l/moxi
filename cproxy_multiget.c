@@ -134,7 +134,6 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
         int cas_emit = (command[3] == 's');
         bool is_multiget = (command[3] != 'l');     // getl cannot be a multiget
                                                     // (it has only one key per command)
-
         if (settings.verbose > 1) {
             moxi_log_write("%d: forward multiget %s (%d %d)\n",
                     uc_cur->sfd, command, cmd_len, uc_num);

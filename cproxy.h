@@ -30,7 +30,7 @@ int cproxy_init(char *cfg_str,
 #define MAX_CHKSUM_STR_LEN      20  //(metadata(8) + ':'(1) + CRC(8))
 #define CRC_ENCODED_LEN         8
 
-#define DI_CHKSUM_UNSUPPORTED   	0
+#define DI_CHKSUM_UNSUPPORTED       0
 #define DI_CHKSUM_SUPPORTED_OFF     (1 << 0)
 #define DI_CHKSUM_CRC               (1 << 1)
 #define DI_CHKSUM_MISMATCH_PECL     (1 << 2)
@@ -785,16 +785,16 @@ extern struct hash_ops strhash_ops;
 extern struct hash_ops skeyhash_ops;
 
 typedef struct {
-    conn      *dc;          // Linked-list of available downstream conns.                                                                              
-    uint32_t   dc_acquired; // Count of acquired (in-use) downstream conns.                                                                            
+    conn      *dc;          // Linked-list of available downstream conns.
+    uint32_t   dc_acquired; // Count of acquired (in-use) downstream conns.
     char      *host_ident;
     uint32_t   error_count;
     uint64_t   error_time;
 
-    // Head & tail of singly linked-list/queue, using                                                                                                  
-    // downstream->next_waiting pointers, where we've reached                                                                                          
-    // downstream_conn_max, so there are waiting downstreams.                                                                                          
-    //                                                                                                                                                 
+    // Head & tail of singly linked-list/queue, using
+    // downstream->next_waiting pointers, where we've reached
+    // downstream_conn_max, so there are waiting downstreams.
+    //
     downstream *downstream_waiting_head;
     downstream *downstream_waiting_tail;
 

@@ -377,7 +377,7 @@ static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream)
     // Fixing SEG-9473
     if (c->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED)
         return true;
-    
+
     // If the metadata says checksums are off for this key, we will let it pass
     if (it->chksum_metadata & DI_CHKSUM_SUPPORTED_OFF)
         return true;
@@ -394,7 +394,7 @@ static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream)
                     fprintf(stderr,
                             "Unverifiable data integrity algorithm in metadata (%x) for key %s\n",
                             it->chksum_metadata, ITEM_key(it));
-        
+
         *error_str = "SERVER_ERROR checksum failed, unknown data integrity algorithm in metadata";
         return false;
     }
@@ -411,24 +411,24 @@ static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream)
     }
 
     calc_chksum = get_checksum(it);
-    
+
     if (calc_chksum != ITEM_chksum(it)) {
         (is_upstream) ? (ptd->stats.stats.tot_upstream_chksum_mismatch++) : (ptd->stats.stats.tot_downstream_chksum_mismatch++);
 
-        // Mismatch, we need to return the data to pecl-memcache, 
+        // Mismatch, we need to return the data to pecl-memcache,
         // with the mismatch flag set in checksum metadata
         it->chksum_metadata |= DI_CHKSUM_MISMATCH_MOXI;
         *error_str = "SERVER_ERROR checksum failed at mcmux";
         if (settings.verbose > 1)
                     fprintf(stderr,
-                            "ERROR: Checksum mismatch at mcmux for key %s, " 
+                            "ERROR: Checksum mismatch at mcmux for key %s, "
                             "header checksum %x, calculated chekcsum %x\n",
                             ITEM_key(it), ITEM_chksum(it), calc_chksum);
         return false;
     }
 
     return true;
-} 
+}
 
 /* We get here after reading the value in set/add/replace
  * commands. The command has been stored in c->cmd, and
@@ -497,7 +497,7 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
 
         char *str_flags   = ITEM_suffix(it);
         char *str_length  = strchr(str_flags + 1, ' ');
-        char *str_chksum  = (uc->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ? 
+        char *str_chksum  = (uc->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ?
                                 NULL : add_conn_suffix(uc);
         char *cas_str;
         int   len_flags   = str_length - str_flags;
@@ -519,7 +519,7 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
         }
         else {
             cas_str = add_conn_suffix(uc);
-            if (cas_str != NULL) 
+            if (cas_str != NULL)
                 sprintf(cas_str, " %llu\r\n", (unsigned long long) cas);
         }
 
@@ -530,7 +530,7 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
                     add_iov(uc, ITEM_key(it), it->nkey) == 0 &&
                     add_iov(uc, str_flags, len_flags) == 0 &&
                     add_iov(uc, str_length, len_length) == 0 &&
-                    (str_chksum == NULL || 
+                    (str_chksum == NULL ||
                      add_iov(uc, str_chksum, strlen(str_chksum)) == 0) &&
                     add_iov(uc, cas_str, strlen(cas_str)) == 0 &&
                     add_iov(uc, ITEM_data(it), it->nbytes) == 0) {

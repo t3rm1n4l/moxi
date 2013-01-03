@@ -1625,7 +1625,7 @@ void map_pstd_foreach_emit(const void *k,
               pstd->stats.tot_downstream_chksum_algo_mismatch);
     more_stat("tot_mb_chksum_mismatch",
               pstd->stats.tot_mb_chksum_mismatch);
-    
+
     snprintf(buf_key, sizeof(buf_key), "%s:stats_cmd_", name);
     emit_proxy_stats_cmd(emit->result, buf_key, "%s_%s_%s", pstd->stats_cmd);
 }
