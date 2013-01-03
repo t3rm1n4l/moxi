@@ -666,8 +666,11 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
 
 
                 if (str_chksum != NULL) {
-                    int l = sprintf(str_chksum, " %.4x:", conns->data_integrity_algo_in_use);
-                    if ((conns->data_integrity_algo_in_use & DI_CHKSUM_SUPPORTED_OFF) == 0) {
+                    // Fixing issues SEG-9477 and SEG-9473
+                    // Fixing SEG-9473
+                    int l = sprintf(str_chksum, " %.4x:", (it->chksum_metadata == DI_CHKSUM_UNSUPPORTED) ? 
+                                DI_CHKSUM_SUPPORTED_OFF : it->chksum_metadata);
+                    if ((it->chksum_metadata & DI_CHKSUM_SUPPORTED_OFF) == 0) {
                         l += sprintf(str_chksum + l, "%.8x", ITEM_chksum(it));
                         if (ITEM_chksum2(it) != 0) {
                             sprintf(str_chksum + l, ":%.8x", ITEM_chksum2(it));
@@ -760,15 +763,14 @@ void set_options_in_use(downstream *ds, conn *uc, conn *dc) {
         {
             upstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
         }
-        else if ((downstream_di_algo & DI_CHKSUM_CRC) && (upstream_di_algo & DI_CHKSUM_CRC))
+        // Fixing SEG-9473
+        else if ((downstream_di_algo & DI_CHKSUM_CRC) && (upstream_di_algo != DI_CHKSUM_UNSUPPORTED))
         {
             upstream_di_algo = DI_CHKSUM_CRC;
         }
         // This is the case where either the downstream and/or upstream support 
         // something other than CRC
         else {
-            // No point in the downstream expecting/calculating the checksum, 
-            // the upstream wont send what it expects
             downstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
             // If the upstream understands checksums, switch it off, 
             // since the downstream wont send what it expects
@@ -777,7 +779,7 @@ void set_options_in_use(downstream *ds, conn *uc, conn *dc) {
             }
         }
     }
-
+   
     if (uc){
         uc->data_integrity_algo_in_use = upstream_di_algo;
     }

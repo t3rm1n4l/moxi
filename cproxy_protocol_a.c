@@ -374,8 +374,8 @@ static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream)
     *error_str = NULL;
 
     // If the we have agreed to no checksum, then nothing to verify
-    if ( (c->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) || 
-            (c->data_integrity_algo_in_use & DI_CHKSUM_SUPPORTED_OFF) )
+    // Fixing SEG-9473
+    if (c->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED)
         return true;
     
     // If the metadata says checksums are off for this key, we will let it pass

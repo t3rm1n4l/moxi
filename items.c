@@ -71,10 +71,17 @@ uint64_t get_cas_id(void) {
 // <chksum_metadata>:<checksum>[:<uncompressed checksum>] 
 // The checksum metadata gives the algorithm used for checksum
 // As of now, we just support crc32
+// Return value:
+// true - if NULL checksum or correctly formatted checksum
+// false - otherwise
 bool parse_chksum(char *chksum_str, item *it) {
 
     char *c1, *c2;
     bool result = false;
+
+    // Fixing SEG-9793
+    if (chksum_str == NULL)
+        return true;
 
     ITEM_chksum(it) = 0;
     ITEM_chksum2(it) = 0;
