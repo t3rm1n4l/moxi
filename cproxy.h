@@ -799,7 +799,8 @@ typedef struct {
     downstream *downstream_waiting_tail;
 
     conn c;
-    unsigned char data_integrity_algo_in_use;
+    int data_integrity_algo; // The data integrity algo supported by the downstream
+    bool has_di; // Whether the downstream understands DI
     bool waiting_for_options;
 
 } zstored_downstream_conns;
@@ -905,9 +906,9 @@ char *trimstrdup(char *s);
 bool  wordeq(char *s, char *word);
 
 void handle_upstream_options(conn *uc, char *options);
-void parse_options(conn *c, char *options);
+void parse_options(conn *c, zstored_downstream_conns *conns, char *options);
 void get_downstream_options(conn *uc);
-void set_options_in_use(downstream *ds, conn *uc, conn *dc);
+void set_options_in_use(zstored_downstream_conns *conns, conn *uc);
 void send_options_upstream(conn *uc);
 
 #endif // CPROXY_H

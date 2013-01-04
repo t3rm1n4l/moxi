@@ -65,7 +65,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
 #define CHKSUM_INDEX    4
 #define CAS_INDEX       (4 + offset)
 
-        if (conns->data_integrity_algo_in_use != DI_CHKSUM_UNSUPPORTED)
+        if (conns->has_di)
             offset++;
         ntokens = scan_tokens(line, tokens, MAX_TOKENS, &clen);
         if (ntokens >= 5 && // Accounts for extra termimation token.
@@ -75,8 +75,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
             safe_strtoul(tokens[VAL_LEN_INDEX].value, (uint32_t *) &vlen)) {
             char  *key  = tokens[KEY_TOKEN].value;
             size_t nkey = tokens[KEY_TOKEN].length;
-            char *chksum = (conns->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ? NULL :
-                tokens[CHKSUM_INDEX].value;
+            char *chksum = (conns->has_di) ? tokens[CHKSUM_INDEX].value : NULL; 
 
             item *it = item_alloc(key, nkey, flags, 0, chksum, vlen + 2);
             if (it != NULL) {
@@ -194,19 +193,9 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         int options_len;
         conn *uc = d->upstream_conn;
 
-        zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+        parse_options(NULL, conns, line);
 
-        conn temp_dc; // temp downstream connection for use with parse_option
-
-        temp_dc.waiting_for_options        = conns->waiting_for_options;
-        temp_dc.data_integrity_algo_in_use = conns->data_integrity_algo_in_use;
-
-        parse_options(&temp_dc, line);
-
-        conns->waiting_for_options         = temp_dc.waiting_for_options;
-        conns->data_integrity_algo_in_use  = temp_dc.data_integrity_algo_in_use;
-
-        set_options_in_use(d, uc, c);
+        set_options_in_use(conns, uc);
 
         if( settings.verbose > 1 )
             moxi_log_write("<%d cproxy_process_a2a_downstream options handling line=%s\n", c->sfd, line);
@@ -238,11 +227,9 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
             }
 
             if (settings.verbose > 2)
-                fprintf(stderr, "Checksum algorithm in use on upstream [%d] = [%x],\
-                        downstream [%d] = [%x]\n",
-                        uc->sfd, uc->data_integrity_algo_in_use,
-                        c->sfd, conns->data_integrity_algo_in_use);
-
+                fprintf(stderr, "Checksum algorithm sent to upstream [%d] = [%x],\
+                        downstream [%d], checksum algo supported by downstream %x\n",
+                        uc->sfd, uc->tmp_di_algo, c->sfd, conns->data_integrity_algo);
         }
     } else if (strncmp(line, "LOCK_ERROR", 10) == 0) {
         d->upstream_suffix = "LOCK_ERROR\r\n";
@@ -647,8 +634,7 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
             int   len_length  = it->nsuffix - len_flags - 2;
             char *str_exptime = add_conn_suffix(c);
             char *str_cas     = (cmd == NREAD_CAS ? add_conn_suffix(c) : NULL);
-            char *str_chksum = (conns->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ?
-                                    NULL : add_conn_suffix(c);
+            char *str_chksum  = NULL;
 
             if (str_flags != NULL &&
                 str_length != NULL &&
@@ -665,16 +651,25 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
                 }
 
 
-                if (str_chksum != NULL) {
-                    // Fixing issues SEG-9477 and SEG-9473
-                    // Fixing SEG-9473
-                    int l = sprintf(str_chksum, " %.4x:", (it->chksum_metadata == DI_CHKSUM_UNSUPPORTED) ?
-                                DI_CHKSUM_SUPPORTED_OFF : it->chksum_metadata);
-                    if ((it->chksum_metadata & DI_CHKSUM_SUPPORTED_OFF) == 0) {
-                        l += sprintf(str_chksum + l, "%.8x", ITEM_chksum(it));
+                if (conns->has_di) {
+                    // The downstream supports DI, so we have to 
+                    // add a checksum to the header. 
+                    str_chksum = add_conn_suffix(c);
+                    // If the upstream also
+                    // supports DI, then we pick up the checksum from the 
+                    // item. Otherwise, we send DI_CHKSUM_SUPPORTED_OFF
+                    if (uc->has_di) {
                         if (ITEM_chksum2(it) != 0) {
-                            sprintf(str_chksum + l, ":%.8x", ITEM_chksum2(it));
+                            sprintf(str_chksum, " %.4x:%.8x:%.8x", it->chksum_metadata,
+                                    ITEM_chksum(it), ITEM_chksum2(it));
                         }
+                        else {
+                            sprintf(str_chksum, " %.4x:%.8x", it->chksum_metadata,
+                                    ITEM_chksum(it));
+                        }
+                    }
+                    else {
+                        sprintf(str_chksum, " %.4x:", DI_CHKSUM_SUPPORTED_OFF);
                     }
                 }
 
@@ -740,18 +735,16 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
     return false;
 }
 
-void set_options_in_use(downstream *ds, conn *uc, conn *dc) {
+void set_options_in_use(zstored_downstream_conns *conns, conn *uc) {
     int downstream_di_algo = DI_CHKSUM_UNSUPPORTED;
     int upstream_di_algo = DI_CHKSUM_UNSUPPORTED;
 
-    zstored_downstream_conns *conns = zstored_get_downstream_conns(dc->thread, dc->host_ident);
-    assert( conns != NULL );
-
-    if (dc)
-        downstream_di_algo = conns->data_integrity_algo_in_use;
+    if (conns) {
+        downstream_di_algo = conns->data_integrity_algo;
+    }
 
     if (uc)
-        upstream_di_algo = uc->data_integrity_algo_in_use;
+        upstream_di_algo = uc->tmp_di_algo;
 
     if(downstream_di_algo != upstream_di_algo) {
         // If Membase doesnt understand checksums, there is no point in pecl-memcache generating them
@@ -771,7 +764,6 @@ void set_options_in_use(downstream *ds, conn *uc, conn *dc) {
         // This is the case where either the downstream and/or upstream support
         // something other than CRC
         else {
-            downstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
             // If the upstream understands checksums, switch it off,
             // since the downstream wont send what it expects
             if (upstream_di_algo != DI_CHKSUM_UNSUPPORTED) {
@@ -781,10 +773,9 @@ void set_options_in_use(downstream *ds, conn *uc, conn *dc) {
     }
 
     if (uc){
-        uc->data_integrity_algo_in_use = upstream_di_algo;
+        uc->tmp_di_algo = upstream_di_algo;
     }
 
-    conns->data_integrity_algo_in_use = downstream_di_algo;
 }
 
 static void create_options_for_upstream(conn *c, char *options, int *options_len) {
@@ -793,10 +784,10 @@ static void create_options_for_upstream(conn *c, char *options, int *options_len
     // So in case of new pecl and new membase that support somethig more than CRC,
     // and old mcmux, we will setill be using CRC
 
-    char *chksum_str = GET_CHKSUM_STR(c->data_integrity_algo_in_use);
+    char *chksum_str = GET_CHKSUM_STR(c->tmp_di_algo);
     if (*chksum_str != '\0')
         *options_len += sprintf(options + *options_len, " DIAlgo=%s",
-                GET_CHKSUM_STR(c->data_integrity_algo_in_use));
+                GET_CHKSUM_STR(c->tmp_di_algo));
 }
 
 
@@ -809,9 +800,12 @@ void send_options_upstream(conn *uc) {
     out_string(uc, options);
 }
 
-void parse_options(conn *c, char *options) {
+// Will have only one of c (for upstream options) and d (for downstream options) 
+// as non NULL
+void parse_options(conn *c, zstored_downstream_conns *conns, char *options) {
 
     int algo = DI_CHKSUM_UNSUPPORTED;
+    bool has_di = false;
 
     if(strncmp(options, "options", sizeof("options")-1) == 0) {
         // Checksums will be unsupported if:
@@ -819,6 +813,7 @@ void parse_options(conn *c, char *options) {
         // - the downstream understands OPTIONS command but it doesnt send the DIAlgo option in the reply
         char *di_algo =  strstr(options, "DIAlgo");
         if (di_algo != NULL) {
+            has_di = true;
             char *algo_str = strchr(di_algo, '=');
             if (algo_str != NULL && strstr(algo_str, DI_CHKSUM_CRC_STR) != NULL) {
                 algo = DI_CHKSUM_CRC;
@@ -833,6 +828,16 @@ void parse_options(conn *c, char *options) {
             fprintf(stderr, "Incorrect response from Membase for options command. Response: [%s]\n", options);
     }
 
-    if (c)
-        c->data_integrity_algo_in_use = algo;
+    if (c) {
+        c->tmp_di_algo = algo;
+        c->has_di = has_di;
+        if (settings.verbose > 2)
+            fprintf(stderr, "Set DI support for upstream [%d] to %d\n", c->sfd, has_di);
+    }
+    else if (conns) {
+        conns->data_integrity_algo = algo;
+        conns->has_di = has_di;
+        if (settings.verbose > 2)
+            fprintf(stderr, "Set DI support for downstream [%s] to %d\n", conns->host_ident,conns->has_di);
+    }
 }

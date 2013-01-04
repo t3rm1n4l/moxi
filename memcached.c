@@ -362,8 +362,9 @@ conn *conn_new(const int sfd, enum conn_states init_state,
         c->msgsize = MSG_LIST_INITIAL;
         c->hdrsize = 0;
 
-        c->data_integrity_algo_in_use = DI_CHKSUM_UNSUPPORTED;
         c->waiting_for_options = false;
+        c->has_di = false;
+        c->tmp_di_algo = DI_CHKSUM_UNSUPPORTED;
 
         c->rbuf = (char *)malloc((size_t)c->rsize);
         c->wbuf = (char *)malloc((size_t)c->wsize);
@@ -431,7 +432,8 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     c->msgcurr = 0;
     c->msgused = 0;
     c->returncas = false;
-    c->data_integrity_algo_in_use = DI_CHKSUM_UNSUPPORTED;
+    c->tmp_di_algo = DI_CHKSUM_UNSUPPORTED;
+    c->has_di = false;
     c->waiting_for_options = false;
 
     c->write_and_go = init_state;
@@ -2657,6 +2659,8 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     item *it;
     char *chksum_str = NULL;
     int offset = 0;
+    zstored_downstream_conns *conns = NULL;
+    char peer_ident[MCS_IDENT_SIZE];
 
 #define VAL_LEN_INDEX   4
 #define CHKSUM_INDEX    5
@@ -2674,9 +2678,19 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
 
-    if (c->data_integrity_algo_in_use != DI_CHKSUM_UNSUPPORTED) {
-        offset++;
-        chksum_str = tokens[CHKSUM_INDEX].value;
+    snprintf(peer_ident, MCS_IDENT_SIZE,
+             "%s:%d:%s:%s:%d",
+             c->peer_host,
+             c->peer_port,
+             (char *)NULL,
+             (char *)NULL,
+             IS_ASCII(c->protocol));
+    if (c->has_di) {
+        conns = zstored_get_downstream_conns(c->thread, peer_ident);
+        if (conns && conns->has_di) {
+            offset++;
+            chksum_str = tokens[CHKSUM_INDEX].value;
+        }
     }
 
     if (! (safe_strtoul(tokens[2].value, (uint32_t *)&flags)

@@ -334,7 +334,7 @@ void handle_upstream_options(conn *uc, char *options) {
 
     assert( uc != NULL );
 
-    parse_options(uc, options);
+    parse_options(uc, NULL, options);
 
     // We need to get the options for this downtream
     // get_downstream_options(uc);
@@ -372,10 +372,17 @@ static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream)
 
     unsigned int calc_chksum;
     *error_str = NULL;
+    zstored_downstream_conns *ds = NULL;
+    conn *uc = NULL;
 
     // If the we have agreed to no checksum, then nothing to verify
     // Fixing SEG-9473
-    if (c->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED)
+    if ((ds = c->extra) == NULL)
+        return true;
+
+    uc = (is_upstream) ? c : ds->dc->extra;
+    // If either upstream or downstream doesnt support DI, then nothing to verify
+    if (!(ds->has_di && uc->has_di))
         return true;
 
     // If the metadata says checksums are off for this key, we will let it pass
@@ -385,8 +392,8 @@ static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream)
     proxy_td *ptd = c->extra;
     assert(ptd != NULL);
 
-    // The command header should have the same checksum as that in c->data_integrity_algo_in_use
-    if ((it->chksum_metadata & c->data_integrity_algo_in_use) == 0) {
+    // The command header should have CRC32 (since that is the only one we understand as of now)
+    if ((it->chksum_metadata & DI_CHKSUM_CRC) == 0) {
         (is_upstream) ? (ptd->stats.stats.tot_upstream_chksum_algo_mismatch++) : (ptd->stats.stats.tot_downstream_chksum_algo_mismatch++);
         it->chksum_metadata |= DI_CHKSUM_MISMATCH_MOXI;
 
@@ -437,7 +444,7 @@ static bool verify_chksum(conn *c, item *it, char **error_str, bool is_upstream)
 void cproxy_process_upstream_ascii_nread(conn *c) {
     assert(c != NULL);
     assert(c->next == NULL);
-
+    assert(c->extra != NULL);
     item *it = c->item;
 
     assert(it != NULL);
@@ -475,6 +482,8 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
     assert(IS_ASCII(uc->protocol));
     assert(IS_PROXY(uc->protocol));
     char *error_str = NULL;
+    char peer_ident[MCS_IDENT_SIZE];
+    zstored_downstream_conns *conns = NULL;
 
     // If checksums are enabled, we should verify the checksum here and send error on mismatch
     verify_chksum(uc, it, &error_str, false);
@@ -497,19 +506,33 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
 
         char *str_flags   = ITEM_suffix(it);
         char *str_length  = strchr(str_flags + 1, ' ');
-        char *str_chksum  = (uc->data_integrity_algo_in_use == DI_CHKSUM_UNSUPPORTED) ?
-                                NULL : add_conn_suffix(uc);
+        char *str_chksum  = NULL;
         char *cas_str;
         int   len_flags   = str_length - str_flags;
         int   len_length  = it->nsuffix - len_flags - 2;
 
-        if (str_chksum != NULL) {
-            int l = sprintf(str_chksum, " %.4x:", it->chksum_metadata);
-            if ((it->chksum_metadata & DI_CHKSUM_SUPPORTED_OFF) == 0) {
-                l += sprintf(str_chksum + l, "%.8x", ITEM_chksum(it));
-                //l += sprintf(str_chksum + l, "%s", "abcdefff");
-                if (ITEM_chksum2(it) != 0)
-                    sprintf(str_chksum + l, ":%.8x", ITEM_chksum2(it));
+        // We want to add checksum in the packet header only if:
+        // downstream understands DI (because if it didnt, the upstream wont expect
+        // checksums) AND
+        // upstream understands DI
+        if (uc->has_di) {
+            snprintf(peer_ident, MCS_IDENT_SIZE,
+                     "%s:%d:%s:%s:%d",
+                     uc->peer_host,
+                     uc->peer_port,
+                     (char *)NULL,
+                     (char *)NULL,
+                     IS_ASCII(uc->protocol));
+            conns = zstored_get_downstream_conns(uc->thread, peer_ident);
+            assert(conns != NULL);
+            if (conns->has_di) {
+                str_chksum = add_conn_suffix(uc);
+                if (ITEM_chksum2(it) != 0) {
+                    sprintf(str_chksum, " %.4x:%.8x:%.8x", it->chksum_metadata,
+                    ITEM_chksum(it), ITEM_chksum2(it));
+                } else {
+                    sprintf(str_chksum, " %.4x:%.8x", it->chksum_metadata, ITEM_chksum(it));
+                }
             }
         }
 

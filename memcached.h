@@ -518,9 +518,11 @@ struct conn {
     int peer_port;
 
     const char *update_diag;
-
-    unsigned char    data_integrity_algo_in_use;    // keeps the Data integity algorithm in use on the upstream/downstream
-    bool    waiting_for_options;                    // Lets us know that the connection is waiting for an options response
+    bool    has_di;                 // Lets us know if the conn understand Data Integrity (only used for upstream conn)
+    unsigned char    tmp_di_algo;   // keeps the Data integity algorithm sent by the upstream.
+                                    // Only valid for the duration of an options command (request and response).
+                                    // Will get overwritten when the next options command is sent by the upstream
+    bool    waiting_for_options;    // Lets us know that the connection is waiting for an options response
 
 };
 

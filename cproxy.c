@@ -2157,6 +2157,8 @@ void cproxy_release_downstream_conn(downstream *d, conn *c) {
                        (d->upstream_conn != NULL ?
                         d->upstream_conn->sfd : 0));
     }
+    c->has_di = false;;
+    c->tmp_di_algo = DI_CHKSUM_UNSUPPORTED;
 
     d->downstream_used--;
     if (d->downstream_used <= 0) {
