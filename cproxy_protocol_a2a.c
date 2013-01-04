@@ -216,7 +216,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         if (uc != NULL && uc->waiting_for_options == true) {
             uc->waiting_for_options = false;
 
-            create_options_for_upstream(c, options, &options_len);
+            create_options_for_upstream(uc, options, &options_len);
             out_string(uc, options);
 
             if (!update_event(uc, EV_WRITE | EV_PERSIST)) {
