@@ -137,7 +137,7 @@ struct A2BSpec a2b_specs[] = {
       .size = sizeof(protocol_binary_request_version)
     },
     { .line = "getl <key> <xpiration>", // Single-key GETL.
-      .cmd  = PROTOCOL_BINARY_CMD_GETL,
+      .cmd  = PROTOCOL_BINARY_CMD_GETLK,
       .cmdq = -1,
       .size = sizeof(protocol_binary_request_header) + 4
     },
@@ -480,7 +480,7 @@ void cproxy_process_a2b_downstream(conn *c) {
         //
         assert(c->cmd == PROTOCOL_BINARY_CMD_GET ||
                c->cmd == PROTOCOL_BINARY_CMD_GETK ||
-               c->cmd == PROTOCOL_BINARY_CMD_GETL ||
+               c->cmd == PROTOCOL_BINARY_CMD_GETLK ||
                c->cmd == PROTOCOL_BINARY_CMD_STAT);
 
         bin_read_key(c, bin_reading_get_key, extlen);
@@ -548,7 +548,7 @@ void cproxy_process_a2b_downstream_nread(conn *c) {
         (c->cmd == PROTOCOL_BINARY_CMD_GET ||
          c->cmd == PROTOCOL_BINARY_CMD_GETK ||
          c->cmd == PROTOCOL_BINARY_CMD_STAT ||
-         c->cmd == PROTOCOL_BINARY_CMD_GETL)) {
+         c->cmd == PROTOCOL_BINARY_CMD_GETLK)) {
         if (settings.verbose > 2) {
             moxi_log_write("<%d cproxy_process_a2b_downstream_nread %d %d %x get/getk/stat\n",
                     c->sfd, c->ileft, c->isize, c->cmd);
@@ -569,7 +569,7 @@ void cproxy_process_a2b_downstream_nread(conn *c) {
 
         if (c->cmd == PROTOCOL_BINARY_CMD_GET ||
             c->cmd == PROTOCOL_BINARY_CMD_GETK ||
-            c->cmd == PROTOCOL_BINARY_CMD_GETL) {
+            c->cmd == PROTOCOL_BINARY_CMD_GETLK) {
             protocol_binary_response_get *response_get =
                 (protocol_binary_response_get *) binary_get_request(c);
 
@@ -793,7 +793,7 @@ void a2b_process_downstream_response(conn *c) {
 
         item_remove(it);
         break;
-    case PROTOCOL_BINARY_CMD_GETL:
+    case PROTOCOL_BINARY_CMD_GETLK:
         if (settings.verbose > 2) {
             moxi_log_write("%d: cproxy_process_a2b_downstream_response GETL "
                     "noreply: %d\n", c->sfd, c->noreply);
@@ -1152,7 +1152,7 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
     }
 
     if (uc->cmd_curr == PROTOCOL_BINARY_CMD_GETK ||
-        uc->cmd_curr == PROTOCOL_BINARY_CMD_GETL) {
+        uc->cmd_curr == PROTOCOL_BINARY_CMD_GETLK) {
         d->upstream_suffix = "END\r\n";
         d->upstream_suffix_len = 0;
         d->upstream_status = PROTOCOL_BINARY_RESPONSE_SUCCESS;
@@ -1762,7 +1762,7 @@ bool a2b_not_my_vbucket(conn *uc, conn *c,
     }
 
     if ((c->cmd != PROTOCOL_BINARY_CMD_GETK &&
-         c->cmd != PROTOCOL_BINARY_CMD_GETL) ||
+         c->cmd != PROTOCOL_BINARY_CMD_GETLK) ||
         c->noreply == false) {
         // For non-multi-key GET commands, enqueue a retry after
         // informing the vbucket map.  This includes single-key GET's.

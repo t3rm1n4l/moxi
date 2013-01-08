@@ -130,7 +130,7 @@ void cproxy_process_upstream_ascii(conn *c, char *line) {
         (false == self_command) &&
         (strncmp(cmd, "get", 3) == 0)) {
         if (cmd[3] == 'l') {
-            c->cmd_curr = PROTOCOL_BINARY_CMD_GETL;
+            c->cmd_curr = PROTOCOL_BINARY_CMD_GETLK;
         } else if (ntokens == 3) {
             // Single-key get/gets optimization.
             //

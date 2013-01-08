@@ -155,6 +155,8 @@ extern "C"
 
     /* getl/unl command */
     PROTOCOL_BINARY_CMD_GETL = 0x94,
+    /* getl with key in response */
+    PROTOCOL_BINARY_CMD_GETLK = 0xa0,
     PROTOCOL_BINARY_CMD_UNL  = 0x95,
     /* end getl */
 
