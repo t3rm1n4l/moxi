@@ -157,7 +157,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
 
         conn_set_state(c, conn_new_cmd);
     } else if (strncmp(line, "LOCK_ERROR", 10) == 0) {
-        d->upstream_suffix = line;
+        d->upstream_suffix = "LOCK_ERROR\r\n";
         d->upstream_suffix_len = 0;
         d->upstream_status = PROTOCOL_BINARY_RESPONSE_ETMPFAIL;
         d->upstream_retry = 0;

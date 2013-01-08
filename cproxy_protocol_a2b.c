@@ -925,6 +925,9 @@ void a2b_process_downstream_response(conn *c) {
             case PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS:
                 out_string(uc, "EXISTS");
                 break;
+            case PROTOCOL_BINARY_RESPONSE_ETMPFAIL:
+                out_string(uc, "SERVER_ERROR temporary failure");
+                break;
             case PROTOCOL_BINARY_RESPONSE_KEY_ENOENT:
             case PROTOCOL_BINARY_RESPONSE_NOT_STORED:
             case PROTOCOL_BINARY_RESPONSE_ENOMEM: // TODO.
