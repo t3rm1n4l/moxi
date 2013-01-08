@@ -184,7 +184,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         }
 
         conn_set_state(c, conn_new_cmd);
-      } else if (conns->waiting_for_options || strncmp(line, "options ", 7) == 0) {
+      } else if (conns->got_options || strncmp(line, "options ", 7) == 0) {
         // If we send an "options" command, we expect either:
         // an "options" response OR
         // an error response (if the membase is old and doesnt understand "options"
@@ -200,7 +200,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         if( settings.verbose > 1 )
             moxi_log_write("<%d cproxy_process_a2a_downstream options handling line=%s\n", c->sfd, line);
 
-        conns->waiting_for_options = false; // clear downstream state
+        conns->got_options = false; // clear downstream state
 
         //uc->waiting_for_options = false;
         conn_set_state(c, conn_pause);

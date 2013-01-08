@@ -801,7 +801,7 @@ typedef struct {
     conn c;
     int data_integrity_algo; // The data integrity algo supported by the downstream
     bool has_di; // Whether the downstream understands DI
-    bool waiting_for_options;
+    bool got_options;
 
 } zstored_downstream_conns;
 

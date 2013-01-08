@@ -2678,14 +2678,14 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
 
-    snprintf(peer_ident, MCS_IDENT_SIZE,
-             "%s:%d:%s:%s:%d",
-             c->peer_host,
-             c->peer_port,
-             (char *)NULL,
-             (char *)NULL,
-             IS_ASCII(c->protocol));
     if (c->has_di) {
+        snprintf(peer_ident, MCS_IDENT_SIZE,
+                 "%s:%d:%s:%s:%d",
+                 c->peer_host,
+                 c->peer_port,
+                 (char *)NULL,
+                 (char *)NULL,
+                 IS_ASCII(c->protocol));
         conns = zstored_get_downstream_conns(c->thread, peer_ident);
         if (conns && conns->has_di) {
             offset++;

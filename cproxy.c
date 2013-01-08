@@ -1764,7 +1764,7 @@ static void send_options_downstream(downstream *d, conn *c) {
 
     zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
     assert( conns != NULL );
-    conns->waiting_for_options = true;
+    conns->got_options = true;
 
     cproxy_forward_a2a_simple_downstream(d, options, c);
 }
@@ -3189,7 +3189,7 @@ bool cproxy_on_connect_downstream_conn(conn *c) {
             zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
 
             //Options, if supported, not yet received.  Issues options to downstream connection.
-            if( conns->waiting_for_options == true )
+            if( conns->got_options == true )
             {
                 if (settings.verbose > 2) {
                     moxi_log_write("%d: send_options_downstream\n", c->sfd);
@@ -3269,7 +3269,7 @@ zstored_downstream_conns *zstored_get_downstream_conns(LIBEVENT_THREAD *thread,
         conns = calloc(1, sizeof(zstored_downstream_conns));
         if (conns != NULL) {
             conns->host_ident = strdup(host_ident);
-            conns->waiting_for_options = true;
+            conns->got_options = true;
             if (conns->host_ident != NULL) {
                 genhash_store(conn_hash, conns->host_ident, conns);
             } else {
