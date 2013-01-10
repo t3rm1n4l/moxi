@@ -132,9 +132,9 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
         assert(cmd_len == 3 || cmd_len == 4); // Either get or gets.
 
         int cas_emit = (command[3] == 's');
-        bool is_multiget = (command[3] != 'l');     // getl cannot be a multiget 
+        bool is_multiget = (command[3] != 'l');     // getl cannot be a multiget
                                                     // (it has only one key per command)
-    
+
         if (settings.verbose > 1) {
             moxi_log_write("%d: forward multiget %s (%d %d)\n",
                     uc_cur->sfd, command, cmd_len, uc_num);
@@ -295,8 +295,19 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
 
                         // Provide the preceding space as optimization
                         // for ascii-to-ascii configuration.
-                        //
-                        emit_skey(c, key - 1, key_len + 1, vbucket, key - command);
+
+                        // For getl, calculate the expiry value length
+                        int len = key_len;
+                        if (!is_multiget) {
+                            next_space = strchr(key + key_len + 1, ' ');
+                            if (next_space != NULL) {
+                                len += next_space - key - key_len;
+                            } else {
+                                len += strlen(key + key_len);
+                            }
+                        }
+
+                        emit_skey(c, key - 1, len + 1, vbucket, key - command);
                         if (!is_multiget)
                             break;      // Only one key, we are done
                     } else {
