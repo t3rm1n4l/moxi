@@ -390,7 +390,7 @@ bool a2b_fill_request_token(struct A2BSpec *spec,
    case 'c': { // cas value for unl
         uint64_t cas = 0;
         if (safe_strtoull(cmd_tokens[cur_token].value, &cas)) {
-            header->request.cas = cas;
+            header->request.cas = htonll(cas);
         }
         break;
    }
