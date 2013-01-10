@@ -977,6 +977,9 @@ void a2b_process_downstream_response(conn *c) {
             case PROTOCOL_BINARY_RESPONSE_NOT_STORED:
                 out_string(uc, "NOT_STORED");
                 break;
+            case PROTOCOL_BINARY_RESPONSE_ETMPFAIL:
+                out_string(uc, "SERVER ERROR temporary failure");
+                break;
             case PROTOCOL_BINARY_RESPONSE_ENOMEM: // TODO.
             default:
                 out_string(uc, "SERVER_ERROR a2b arith error");
