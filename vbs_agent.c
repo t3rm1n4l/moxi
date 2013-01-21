@@ -78,6 +78,7 @@ int read_socket(int fd, char **buf, int heartbeat) {
 
        // socket is not non blocking. return with an error
         moxi_log_write("ERROR: Unable to read from socket  %d\n", fd);
+        free(*buf);
         return -1;
     }
 

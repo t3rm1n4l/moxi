@@ -1392,6 +1392,7 @@ void cproxy_on_config(void *data0, void *data1) {
                                   "http://vbs_server:port" );
 
         } else {
+            m->stat_config_fails++;
             moxi_log_write("ERROR: invalid, empty config from vbs server\n");
         }
         close_outdated_proxies(m, new_config_ver);
