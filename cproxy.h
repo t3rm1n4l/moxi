@@ -20,7 +20,7 @@ int cproxy_init(char *cfg_str,
                 int nthreads,
                 struct event_base *main_base);
 
-#define CPROXY_NOT_CAS UINT64_MAX
+#define CPROXY_NOT_CAS 0
 
 extern volatile uint64_t msec_current_time;
 
