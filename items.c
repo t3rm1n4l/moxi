@@ -94,6 +94,10 @@ item *do_item_alloc(char *key, const size_t nkey, const int flags, const rel_tim
         ntotal += sizeof(uint64_t);
     }
 
+    unsigned int id = slabs_clsid(ntotal);
+    if (id == 0)
+        return 0;
+
 #ifdef MOXI_ITEM_MALLOC
     item *itx = malloc(ntotal);
     if (itx != NULL) {
@@ -113,9 +117,6 @@ item *do_item_alloc(char *key, const size_t nkey, const int flags, const rel_tim
 
     return itx;
 #else
-    unsigned int id = slabs_clsid(ntotal);
-    if (id == 0)
-        return 0;
 
     /* do a quick check if we have any expired items in the tail.. */
     int tries = 50;
