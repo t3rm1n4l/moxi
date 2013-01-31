@@ -1097,7 +1097,6 @@ bool cproxy_release_downstream(downstream *d, bool force) {
             if (suffix_len == 0) {
                 suffix_len = strlen(d->upstream_suffix);
             }
-
             if (add_iov(d->upstream_conn,
                         d->upstream_suffix,
                         suffix_len) == 0 &&

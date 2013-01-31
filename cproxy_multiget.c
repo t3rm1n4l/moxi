@@ -295,17 +295,8 @@ bool multiget_ascii_downstream(downstream *d, conn *uc,
                         // Provide the preceding space as optimization
                         // for ascii-to-ascii configuration.
 
-                        // For getl, calculate the expiry value length
-                        int len = key_len;
-                        if (!is_multiget) {
-                            next_space = strchr(key + key_len + 1, ' ');
-                            if (next_space != NULL) {
-                                len += next_space - key - key_len;
-                            } else {
-                                len += strlen(key + key_len);
-                            }
-                        }
-
+                        // For getl, forward entire line
+                        int len = is_multiget ? key_len : strlen(key);
                         emit_skey(c, key - 1, len + 1, vbucket, key - command);
                         if (!is_multiget)
                             break;      // Only one key, we are done
