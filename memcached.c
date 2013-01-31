@@ -2709,7 +2709,7 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
 
     // does cas value exist?
     if (handle_cas) {
-        if (!safe_strtoull(tokens[5].value, &req_cas_id)) {
+        if (!safe_strtoull(tokens[CAS_INDEX].value, &req_cas_id)) {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
