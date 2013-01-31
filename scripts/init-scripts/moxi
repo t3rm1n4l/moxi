@@ -1,0 +1,94 @@
+#! /bin/sh
+#
+# chkconfig: - 55 45
+# description:	moxi - memcache connection multiplexer
+# processname: moxi
+# config: /etc/sysconfig/moxi
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+USER=nobody
+MONPIDFILE=/var/run/moxi/moximon.pid
+MONMOXI=/opt/moxi/moximon.sh
+
+# Check that networking is up.
+if [ "$NETWORKING" = "no" ]
+then
+	exit 0
+fi
+
+RETVAL=0
+prog="moxi"
+
+start () {
+    mkdir -m 755 -p /var/run/moxi
+    chown $USER /var/run/moxi
+    # check if another instance of moxi is already running 
+    if [[ -f "$MONPIDFILE" ]];then
+        read pid < "$MONPIDFILE"
+    fi
+    if [[ ! -f "$MONPIDFILE" || -z "$pid" ]];then
+        pid=$(pidof $MONMOXI)
+    fi 
+    if [[ -n "$pid" && -d "/proc/$pid" ]];then
+        echo "Already running..."
+        exit 0
+    fi 
+
+    $MONMOXI > /dev/null 2>&1 &
+    rc=$?
+    pid=$!
+
+    if [ $rc == 0 ] ; then
+        cmd='/bin/true'
+        echo "$pid" > "$MONPIDFILE"
+    else
+        cmd='/bin/false'
+        rm -rf $MONPIDFILE
+        touch /var/lock/subsys/moxi
+    fi
+    action $"Starting $prog: " $cmd
+}
+
+stop () {
+    echo -n $"Stopping $prog: "
+    killproc $MONMOXI
+    rm -rf $MONPIDFILE
+    killproc -p /var/run/moxi/moxi.pid moxi
+    RETVAL=$?
+    echo
+    if [ $RETVAL -eq 0 ] ; then
+        rm -f /var/lock/subsys/moxi
+        rm -f /var/run/moxi/moxi.pid
+    fi
+}
+
+restart () {
+        stop
+        start
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  stats)
+    muxstats $2
+    ;;
+  status)
+	status -p /var/run/moxi/moxi.pid moxi
+	;;
+  restart|reload)
+	restart
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status|stats|restart|reload}"
+	exit 1
+esac
+
+exit $?
