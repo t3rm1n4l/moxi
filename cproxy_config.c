@@ -48,7 +48,7 @@ proxy_behavior behavior_default_g = {
     .downstream_retry = 1,
     .downstream_protocol = proxy_downstream_ascii_prot,
     .downstream_timeout = {
-        .tv_sec  = 5,
+        .tv_sec  = 15,
         .tv_usec = 0
     },
     .downstream_conn_queue_timeout = {
