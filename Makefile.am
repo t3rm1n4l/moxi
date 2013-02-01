@@ -43,7 +43,7 @@ moxi_SOURCES = memcached.c memcached.h \
            config_static.h \
            htgram.c htgram.h \
            vbs_agent.c vbs_agent.h \
-		   agent_vbs_config.c
+		   agent_config.c agent.h
 
 if BUILD_DAEMON
 moxi_SOURCES += daemon.c
@@ -83,7 +83,7 @@ testapp_SOURCES += cache.c
 endif
 
 if HAVE_LIBCONFLATE
-moxi_SOURCES += agent.h agent_config.c agent_ping.c agent_stats.c
+moxi_SOURCES += agent_ping.c agent_stats.c
 endif
 
 if BUILD_SOLARIS_PRIVS

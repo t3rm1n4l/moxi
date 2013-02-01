@@ -13,6 +13,9 @@
 #include "log.h"
 #include "cJSON.h"
 #include "vbs_agent.h"
+#ifndef HAVE_CONFLATE_H
+    #include "kv_helper.h"
+#endif
 
 // Integration with libconflate.
 //
@@ -46,6 +49,15 @@ static void cproxy_init_null_bucket(proxy_main *m);
 
 static void cproxy_on_config(void *data0, void *data1);
 
+char **get_key_values(kvpair_t *kvs, char *key) {
+    kvpair_t *x = find_kvpair(kvs, key);
+    if (x != NULL) {
+        return x->values;
+    }
+    return NULL;
+}
+
+#ifdef HAVE_CONFLATE_H 
 static void agent_logger(void *userdata,
                          enum conflate_log_level lvl,
                          const char *msg, ...)
@@ -276,6 +288,7 @@ int cproxy_init_agent(char *cfg_str,
 
     return rv;
 }
+#endif    
 
 int cproxy_init_vbs_agent(char *cfg_str,
                       proxy_behavior behavior,
@@ -284,8 +297,9 @@ int cproxy_init_vbs_agent(char *cfg_str,
     static char hostname[100] = {0};
     int port = 0;
     int rv = 0;
-
+#ifdef HAVE_CONFLATE_H
     init_extensions();
+#endif    
 
     if (cfg_str == NULL) {
         moxi_log_write("ERROR: missing cfg\n");
@@ -422,7 +436,7 @@ proxy_main *cproxy_init_vbs_agent_start(char *hostname,
     return NULL;
 }
 
-
+#ifdef HAVE_CONFLATE_H
 proxy_main *cproxy_init_agent_start(char *jid,
                                     char *jpw,
                                     char *dbpath,
@@ -509,6 +523,7 @@ proxy_main *cproxy_init_agent_start(char *jid,
 
     return NULL;
 }
+#endif
 
 static void cproxy_init_null_bucket(proxy_main *m) {
     proxy_behavior proxyb = m->behavior;
@@ -532,7 +547,7 @@ static void cproxy_init_null_bucket(proxy_main *m) {
 }
 
 
-
+#ifdef HAVE_CONFLATE_H
 conflate_result on_conflate_new_config(void *userdata, kvpair_t *config) {
     assert(config != NULL);
 
@@ -594,6 +609,7 @@ conflate_result on_conflate_new_config(void *userdata, kvpair_t *config) {
 
     return CONFLATE_ERROR;
 }
+#endif
 
 #ifdef MOXI_USE_LIBVBUCKET
 
@@ -1392,7 +1408,6 @@ void cproxy_on_config(void *data0, void *data1) {
                                   "http://vbs_server:port" );
 
         } else {
-            m->stat_config_fails++;
             moxi_log_write("ERROR: invalid, empty config from vbs server\n");
         }
         close_outdated_proxies(m, new_config_ver);
@@ -1953,13 +1968,5 @@ char **parse_kvs_behavior(kvpair_t *kvs,
     return props;
 }
 
-// ----------------------------------------------------------
 
-char **get_key_values(kvpair_t *kvs, char *key) {
-    kvpair_t *x = find_kvpair(kvs, key);
-    if (x != NULL) {
-        return x->values;
-    }
-    return NULL;
-}
 
