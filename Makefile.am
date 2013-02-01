@@ -42,7 +42,8 @@ moxi_SOURCES = memcached.c memcached.h \
            cJSON.c cJSON.h \
            config_static.h \
            htgram.c htgram.h \
-           vbs_agent.c vbs_agent.h
+           vbs_agent.c vbs_agent.h \
+		   agent_vbs_config.c
 
 if BUILD_DAEMON
 moxi_SOURCES += daemon.c
