@@ -11,6 +11,7 @@
 USER=nobody
 MONPIDFILE=/var/run/moxi/moximon.pid
 MONMOXI=/opt/moxi/moximon.sh
+export LD_LIBRARY_PATH=/opt/moxi/lib:$LD_LIBRARY_PATH
 
 # Check that networking is up.
 if [ "$NETWORKING" = "no" ]

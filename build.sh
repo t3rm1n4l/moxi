@@ -38,6 +38,6 @@ then
 fi
 
 echo Building moxi...
-./config/autorun.sh && ./configure  --enable-moxi-libvbucket --without-check --no-recursion --without-memcached --without-libvbucket-prefix --with-libvbucket-prefix=$PREFIX --without-libevent-prefix --with-libevent-prefix=$PREFIX --without-libhashkit-prefix --with-libhashkit-prefix=$PREFIX --prefix=$PREFIX && make install
+./config/autorun.sh && ./configure --enable-moxi-libvbucket --enable-moxi-libmemcached --without-check --no-recursion --without-memcached --without-libvbucket-prefix --with-libvbucket-prefix=$PREFIX --without-libevent-prefix --with-libevent-prefix=$PREFIX --without-libhashkit-prefix --with-libhashkit-prefix=$PREFIX --prefix=$PREFIX && make install
 
 /sbin/ldconfig -n $PREFIX/lib
