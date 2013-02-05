@@ -4,7 +4,8 @@
 use warnings;
 use strict;
 
-my $version = `git describe`;
+#my $version = `git describe`;
+my $version = read_file("VERSION");
 chomp $version;
 # Test the various versions.
 #my $version = 'foob';
