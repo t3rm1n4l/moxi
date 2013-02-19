@@ -24,7 +24,7 @@ while :; do
     if [ -f /etc/sysconfig/moxi ];then
         . /etc/sysconfig/moxi
     fi
-    daemon /opt/moxi/bin/moxi -d -X -u $USER -c $MAXCONN -t $THREADS -p $PORT -a $PERMS -P $PIDFILE -m $MAX_MEMORY $OPTIONS -v
+    daemon /opt/moxi/bin/moxi -d -X -u $USER -c $MAXCONN -t $THREADS -p $PORT -a $PERMS -P $PIDFILE -m $MAX_MEMORY $OPTIONS -Z downstream_conn_max=$CONNS_PER_MEMCACHED -v
     RETVAL=$?
     if [ $RETVAL -ne 0 ];then
         echo $RETVAL
