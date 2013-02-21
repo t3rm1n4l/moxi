@@ -77,7 +77,8 @@ extern "C"
     PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED = 0x83,
     PROTOCOL_BINARY_RESPONSE_EINTERNAL = 0x84,
     PROTOCOL_BINARY_RESPONSE_EBUSY = 0x85,
-    PROTOCOL_BINARY_RESPONSE_ETMPFAIL = 0x86
+    PROTOCOL_BINARY_RESPONSE_ETMPFAIL = 0x86,
+    PROTOCOL_BINARY_RESPONSE_CKSUM_FAILED = 0x87
   } protocol_binary_response_status;
 
   /**
@@ -164,8 +165,12 @@ extern "C"
 
     PROTOCOL_BINARY_CMD_LAST_RESERVED = 0xef,
 
+    /* DI options command */
+    PROTOCOL_BINARY_CMD_OPTIONS = 0xa0,
+
     /* Scrub the data */
     PROTOCOL_BINARY_CMD_SCRUB = 0xf0
+
   } protocol_binary_command;
 
   /**
@@ -175,6 +180,8 @@ extern "C"
   typedef enum {
     PROTOCOL_BINARY_RAW_BYTES = 0x00
   } protocol_binary_datatypes;
+
+#define PROTOCOL_BINARY_WITH_CKSUM  0x01
 
   /**
    * Definition of the header structure for a request packet.
@@ -262,6 +269,21 @@ extern "C"
   typedef protocol_binary_response_get protocol_binary_response_getk;
   typedef protocol_binary_response_get protocol_binary_response_getkq;
 
+  typedef union {
+    struct {
+      protocol_binary_response_header header;
+      struct {
+        uint32_t flags;
+        uint32_t cksumlen;
+      } body;
+    } message;
+    uint8_t bytes[sizeof(protocol_binary_response_header) + 4];
+  } protocol_binary_response_get_with_cksum;
+
+  typedef protocol_binary_response_get_with_cksum protocol_binary_response_getq_with_cksum;
+  typedef protocol_binary_response_get_with_cksum protocol_binary_response_getk_with_cksum;
+  typedef protocol_binary_response_get_with_cksum protocol_binary_response_getkq_with_cksum;
+
   /**
    * Definition of the packet used by the delete command
    * See section 4
@@ -290,8 +312,6 @@ extern "C"
     uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
   } protocol_binary_request_flush;
 
-  typedef protocol_binary_request_flush protocol_binary_request_getl;
-
   /**
    * Definition of the packet returned by the flush command
    * See section 4
@@ -308,12 +328,26 @@ extern "C"
       struct {
         uint32_t flags;
         uint32_t expiration;
+        uint32_t cksumlen;
       } body;
     } message;
     uint8_t bytes[sizeof(protocol_binary_request_header) + 8];
   } protocol_binary_request_set;
   typedef protocol_binary_request_set protocol_binary_request_add;
   typedef protocol_binary_request_set protocol_binary_request_replace;
+
+    /**
+     * Definition of the packet used by append with checksum
+     */
+    typedef union {
+        struct {
+            protocol_binary_request_header header;
+            struct {
+                uint32_t cksumlen;
+            } body;
+        } message;
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
+    } protocol_binary_request_append;
 
   /**
    * Definition of the packet returned by set, add and replace
@@ -385,8 +419,7 @@ extern "C"
    * Definition of the packet used by append and prepend command
    * See section 4
    */
-  typedef protocol_binary_request_no_extras protocol_binary_request_append;
-  typedef protocol_binary_request_no_extras protocol_binary_request_prepend;
+  typedef protocol_binary_request_append protocol_binary_request_prepend;
 
   /**
    * Definition of the packet returned from a successful append or prepend
@@ -407,6 +440,11 @@ extern "C"
    */
   typedef protocol_binary_response_no_extras protocol_binary_response_version;
 
+  /**
+   * Definition of the packet returned from a successful version command
+   * See section 4
+   */
+  typedef protocol_binary_response_no_extras protocol_binary_response_options;
 
   /**
    * Definition of the packet used by the stats command.
@@ -419,6 +457,21 @@ extern "C"
    * See section 4
    */
   typedef protocol_binary_response_no_extras protocol_binary_response_stats;
+
+  /**
+   * Definition of getl request
+   */
+  typedef union {
+        struct {
+            protocol_binary_request_header header;
+            struct {
+                uint32_t expiration;
+                uint16_t metadata_len;
+            } body;
+        } message;
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
+    } protocol_binary_request_getl;
+
 #ifdef __cplusplus
 }
 #endif
