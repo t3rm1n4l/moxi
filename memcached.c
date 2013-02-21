@@ -419,6 +419,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     c->sfd = sfd;
     c->state = init_state;
     c->rlbytes = 0;
+    c->cksumlen = 0;
     c->cmd = -1;
     c->rbytes = c->wbytes = 0;
     c->wcurr = c->wbuf;
@@ -2685,7 +2686,7 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
                  c->peer_port,
                  (char *)NULL,
                  (char *)NULL,
-                 IS_ASCII(c->protocol));
+                 IS_ASCII(c->peer_protocol));
         conns = zstored_get_downstream_conns(c->thread, peer_ident);
         if (conns && conns->has_di) {
             offset++;
@@ -2752,6 +2753,7 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
 
         return;
     }
+
     ITEM_set_cas(it, req_cas_id);
 
     c->item = it;

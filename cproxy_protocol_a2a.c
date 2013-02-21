@@ -21,7 +21,7 @@ extern bool cproxy_forward_or_error(downstream *d);
 int a2a_multiget_start(conn *c, char *cmd, int cmd_len);
 int a2a_multiget_skey(conn *c, char *skey, int skey_len, int vbucket, int key_index);
 int a2a_multiget_end(conn *c);
-static void create_options_for_upstream(conn *c, char *options, int *options_len);
+
 
 void cproxy_init_a2a() {
     // Nothing right now.
@@ -75,7 +75,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
             safe_strtoul(tokens[VAL_LEN_INDEX].value, (uint32_t *) &vlen)) {
             char  *key  = tokens[KEY_TOKEN].value;
             size_t nkey = tokens[KEY_TOKEN].length;
-            char *chksum = (conns->has_di) ? tokens[CHKSUM_INDEX].value : NULL; 
+            char *chksum = (conns->has_di) ? tokens[CHKSUM_INDEX].value : NULL;
 
             item *it = item_alloc(key, nkey, flags, 0, chksum, vlen + 2);
             if (it != NULL) {
@@ -184,7 +184,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         }
 
         conn_set_state(c, conn_new_cmd);
-      } else if (conns->got_options || strncmp(line, "options ", 7) == 0) {
+      } else if (conns->got_options == false || strncmp(line, "options ", 7) == 0) {
         // If we send an "options" command, we expect either:
         // an "options" response OR
         // an error response (if the membase is old and doesnt understand "options"
@@ -200,7 +200,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
         if( settings.verbose > 1 )
             moxi_log_write("<%d cproxy_process_a2a_downstream options handling line=%s\n", c->sfd, line);
 
-        conns->got_options = false; // clear downstream state
+        conns->got_options = true; // clear downstream state
 
         //uc->waiting_for_options = false;
         conn_set_state(c, conn_pause);
@@ -638,11 +638,11 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
 
 
                 if (conns->has_di) {
-                    // The downstream supports DI, so we have to 
-                    // add a checksum to the header. 
+                    // The downstream supports DI, so we have to
+                    // add a checksum to the header.
                     str_chksum = add_conn_suffix(c);
                     // If the upstream also
-                    // supports DI, then we pick up the checksum from the 
+                    // supports DI, then we pick up the checksum from the
                     // item. Otherwise, we send DI_CHKSUM_SUPPORTED_OFF
                     if (uc->has_di) {
                         if (ITEM_chksum2(it) != 0) {
@@ -734,28 +734,15 @@ void set_options_in_use(zstored_downstream_conns *conns, conn *uc) {
 
     if(downstream_di_algo != upstream_di_algo) {
         // If Membase doesnt understand checksums, there is no point in pecl-memcache generating them
-        if (downstream_di_algo == DI_CHKSUM_UNSUPPORTED)
-        {
-            upstream_di_algo = DI_CHKSUM_UNSUPPORTED;
-        }
-        else if (downstream_di_algo & DI_CHKSUM_SUPPORTED_OFF)
-        {
-            upstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
-        }
-        // Fixing SEG-9473
-        else if ((downstream_di_algo & DI_CHKSUM_CRC) && (upstream_di_algo != DI_CHKSUM_UNSUPPORTED))
-        {
-            upstream_di_algo = DI_CHKSUM_CRC;
-        }
-        // This is the case where either the downstream and/or upstream support
-        // something other than CRC
-        else {
-            // If the upstream understands checksums, switch it off,
-            // since the downstream wont send what it expects
-            if (upstream_di_algo != DI_CHKSUM_UNSUPPORTED) {
+        switch (downstream_di_algo & DI_CHKSUM_MASK) {
+            case DI_CHKSUM_UNSUPPORTED:
+            case DI_CHKSUM_SUPPORTED_OFF:
+            case DI_CHKSUM_CRC:
+                upstream_di_algo = downstream_di_algo & DI_CHKSUM_MASK;
+            default:
                 upstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
-            }
         }
+
     }
 
     if (uc){
@@ -763,19 +750,6 @@ void set_options_in_use(zstored_downstream_conns *conns, conn *uc) {
     }
 
 }
-
-static void create_options_for_upstream(conn *c, char *options, int *options_len) {
-    *options_len = sprintf(options, "options version=%s", VERSION);
-    // If we dont understand some option, we obviously cannot make it into a string.
-    // So in case of new pecl and new membase that support somethig more than CRC,
-    // and old mcmux, we will setill be using CRC
-
-    char *chksum_str = GET_CHKSUM_STR(c->tmp_di_algo);
-    if (*chksum_str != '\0')
-        *options_len += sprintf(options + *options_len, " DIAlgo=%s",
-                GET_CHKSUM_STR(c->tmp_di_algo));
-}
-
 
 void send_options_upstream(conn *uc) {
 
@@ -786,7 +760,7 @@ void send_options_upstream(conn *uc) {
     out_string(uc, options);
 }
 
-// Will have only one of c (for upstream options) and d (for downstream options) 
+// Will have only one of c (for upstream options) and d (for downstream options)
 // as non NULL
 void parse_options(conn *c, zstored_downstream_conns *conns, char *options) {
 

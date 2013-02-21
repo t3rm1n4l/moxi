@@ -37,6 +37,7 @@ int cproxy_init(char *cfg_str,
 #define DI_CHKSUM_MISMATCH_MCMUX    (1 << 3)
 #define DI_CHKSUM_MISMATCH_MOXI     (1 << 4)
 #define DI_CHKSUM_MISMATCH_MB       (1 << 5)
+#define DI_CHKSUM_MASK              0x3f
 
 extern volatile uint64_t msec_current_time;
 
@@ -910,5 +911,6 @@ void parse_options(conn *c, zstored_downstream_conns *conns, char *options);
 void get_downstream_options(conn *uc);
 void set_options_in_use(zstored_downstream_conns *conns, conn *uc);
 void send_options_upstream(conn *uc);
+void create_options_for_upstream(conn *c, char *options, int *options_len);
 
 #endif // CPROXY_H

@@ -431,6 +431,7 @@ struct conn {
 
     char   *ritem;  /** when we read in an item's value, it goes here */
     int    rlbytes;
+    int    cksumlen; // Checksum length
 
     /* data for the nread state */
 

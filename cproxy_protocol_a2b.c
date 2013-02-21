@@ -20,7 +20,8 @@ static protocol_binary_request_noop req_noop = {
 
 #define CMD_TOKEN  0
 #define KEY_TOKEN  1
-#define MAX_TOKENS 9
+#define GETLMETA_TOKEN 3
+#define MAX_TOKENS 10
 
 // A2B means ascii-to-binary (or, ascii upstream and binary downstream).
 //
@@ -41,31 +42,37 @@ struct A2BSpec {
 // The a2b_specs are immutable after init.
 //
 // The arguments are carefully named with unique first characters.
+// These specs are only used to parse simple commands like get, delete,etc
+// For commands like set, replace, etc which involves item, specs are not used.
+// Instead, it parses item structure directly.
 //
 struct A2BSpec a2b_specs[] = {
-    { .line = "set <key> <flags> <exptime> <bytes> [noreply]",
+    { .line = "set <key> <flags> <exptime> <bytes> <cksum> [noreply]",
       .cmd  = PROTOCOL_BINARY_CMD_SET,
       .cmdq = PROTOCOL_BINARY_CMD_SETQ,
       // The size should be...
       //   sizeof(protocol_binary_request_header) [24 bytes] +
       //   sizeof(protocol_binary_request_set.message.body) [8 bytes]
-      .size = sizeof(protocol_binary_request_header) + 8
+      //   Checksum length [4 bytes]
+      .size = sizeof(protocol_binary_request_header) + 12
     },
-    { .line = "add <key> <flags> <exptime> <bytes> [noreply]",
+    { .line = "add <key> <flags> <exptime> <bytes> <cksum> [noreply]",
       .cmd  = PROTOCOL_BINARY_CMD_ADD,
       .cmdq = PROTOCOL_BINARY_CMD_ADDQ,
       // The size should be...
       //   sizeof(protocol_binary_request_header) [24 bytes] +
       //   sizeof(protocol_binary_request_add.message.body) [8 bytes]
-      .size = sizeof(protocol_binary_request_header) + 8
+      //   Checksum length [4 bytes]
+      .size = sizeof(protocol_binary_request_header) + 12
     },
-    { .line = "replace <key> <flags> <exptime> <bytes> [noreply]",
+    { .line = "replace <key> <flags> <exptime> <bytes> <cksum> [noreply]",
       .cmd  = PROTOCOL_BINARY_CMD_REPLACE,
       .cmdq = PROTOCOL_BINARY_CMD_REPLACEQ,
       // The size should be...
       //   sizeof(protocol_binary_request_header) [24 bytes] +
       //   sizeof(protocol_binary_request_replace.message.body) [8 bytes]
-      .size = sizeof(protocol_binary_request_header) + 8
+      //   Checksum length [4 bytes]
+      .size = sizeof(protocol_binary_request_header) + 12
     },
     { .line = "append <key> <skip_flags> <skip_exptime> <bytes> [noreply]",
       .cmd  = PROTOCOL_BINARY_CMD_APPEND,
@@ -77,13 +84,14 @@ struct A2BSpec a2b_specs[] = {
       .cmdq = PROTOCOL_BINARY_CMD_PREPENDQ,
       .size = sizeof(protocol_binary_request_prepend)
     },
-    { .line = "cas <key> <flags> <exptime> <bytes> <cas> [noreply]",
+    { .line = "cas <key> <flags> <exptime> <bytes> <cas> <cksum> [noreply]",
       .cmd  = PROTOCOL_BINARY_CMD_SET,
       .cmdq = PROTOCOL_BINARY_CMD_SETQ,
       // The size should be...
       //   sizeof(protocol_binary_request_header) [24 bytes] +
       //   sizeof(protocol_binary_request_set.message.body) [8 bytes]
-      .size = sizeof(protocol_binary_request_header) + 8
+      //   Checksum length [4 bytes]
+      .size = sizeof(protocol_binary_request_header) + 12
     },
     { .line = "delete <key> [noreply]",
       .cmd  = PROTOCOL_BINARY_CMD_DELETE,
@@ -136,10 +144,10 @@ struct A2BSpec a2b_specs[] = {
       .cmdq = -1,
       .size = sizeof(protocol_binary_request_version)
     },
-    { .line = "getl <key> <xpiration>", // Single-key GETL.
+    { .line = "getl <key> <xpiration> [meta]", // Single-key GETL.
       .cmd  = PROTOCOL_BINARY_CMD_GETLK,
       .cmdq = -1,
-      .size = sizeof(protocol_binary_request_header) + 4
+      .size = sizeof(protocol_binary_request_getl)
     },
     { .line = "unl <key> <cas>", // Single-key UNL.
       .cmd  = PROTOCOL_BINARY_CMD_UNL,
@@ -153,6 +161,11 @@ struct A2BSpec a2b_specs[] = {
       //   sizeof(protocol_binary_request_header) [24 bytes] +
       //   sizeof(protocol_binary_request_touch.message.body) [4 bytes]
       .size = sizeof(protocol_binary_request_header) + 4,
+    },
+    { .line = "options [<Version>] [<DIAlgo>]",
+      .cmd  = PROTOCOL_BINARY_CMD_OPTIONS,
+      .cmdq = -1,
+      .size = sizeof(protocol_binary_request_header)
     },
     { .line = 0 } // NULL sentinel.
 };
@@ -169,7 +182,8 @@ int a2b_fill_request(short    cmd,
                      protocol_binary_request_header *header,
                      uint8_t **out_key,
                      uint16_t *out_keylen,
-                     uint8_t  *out_extlen);
+                     uint8_t  *out_extlen,
+                     uint16_t *out_metalen);
 
 bool a2b_fill_request_token(struct A2BSpec *spec,
                             int      cur_token,
@@ -178,7 +192,8 @@ bool a2b_fill_request_token(struct A2BSpec *spec,
                             protocol_binary_request_header *header,
                             uint8_t **out_key,
                             uint16_t *out_keylen,
-                            uint8_t  *out_extlen);
+                            uint8_t  *out_extlen,
+                            uint16_t *out_metalen);
 
 void a2b_process_downstream_response(conn *c);
 
@@ -249,7 +264,8 @@ int a2b_fill_request(short    cmd,
                      protocol_binary_request_header *header,
                      uint8_t **out_key,
                      uint16_t *out_keylen,
-                     uint8_t  *out_extlen) {
+                     uint8_t  *out_extlen,
+                     uint16_t *out_metalen) {
     assert(header);
     assert(cmd_tokens);
     assert(cmd_ntokens > 1);
@@ -287,7 +303,8 @@ int a2b_fill_request(short    cmd,
                                            header,
                                            out_key,
                                            out_keylen,
-                                           out_extlen) == false) {
+                                           out_extlen,
+                                           out_metalen) == false) {
                     return 0;
                 }
             }
@@ -310,7 +327,8 @@ bool a2b_fill_request_token(struct A2BSpec *spec,
                             protocol_binary_request_header *header,
                             uint8_t **out_key,
                             uint16_t *out_keylen,
-                            uint8_t  *out_extlen) {
+                            uint8_t  *out_extlen,
+                            uint16_t *out_metalen) {
     (void)cmd_ntokens;
     assert(header);
     assert(spec);
@@ -392,6 +410,17 @@ bool a2b_fill_request_token(struct A2BSpec *spec,
         if (safe_strtoull(cmd_tokens[cur_token].value, &cas)) {
             header->request.cas = htonll(cas);
         }
+        break;
+   }
+
+   case 'm': { // getl metadata
+        protocol_binary_request_getl *req =
+            (protocol_binary_request_getl *) header;
+
+        *out_metalen = cmd_tokens[cur_token].length;
+        req->message.body.metadata_len = htons(*out_metalen);
+        *out_extlen = sizeof(req->message.body);
+        header->request.extlen   = *out_extlen;
         break;
    }
 
@@ -483,6 +512,7 @@ void cproxy_process_a2b_downstream(conn *c) {
                c->cmd == PROTOCOL_BINARY_CMD_GETLK ||
                c->cmd == PROTOCOL_BINARY_CMD_STAT);
 
+
         bin_read_key(c, bin_reading_get_key, extlen);
     } else {
         assert(keylen == 0 && extlen == 0);
@@ -502,7 +532,9 @@ void cproxy_process_a2b_downstream(conn *c) {
                    c->cmd == PROTOCOL_BINARY_CMD_VERSION ||
                    c->cmd == PROTOCOL_BINARY_CMD_INCREMENT ||
                    c->cmd == PROTOCOL_BINARY_CMD_DECREMENT ||
-                   c->cmd == PROTOCOL_BINARY_CMD_UNL);
+                   c->cmd == PROTOCOL_BINARY_CMD_UNL ||
+                   c->cmd == PROTOCOL_BINARY_CMD_OPTIONS ||
+                   c->cmd == PROTOCOL_BINARY_CMD_GETLK);
 
             bin_read_key(c, bin_reading_get_key, bodylen);
         } else {
@@ -573,9 +605,21 @@ void cproxy_process_a2b_downstream_nread(conn *c) {
             protocol_binary_response_get *response_get =
                 (protocol_binary_response_get *) binary_get_request(c);
 
-            assert(extlen == sizeof(response_get->message.body));
+            c->cksumlen = 0;
+            zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+            if (c->cmd != PROTOCOL_BINARY_CMD_GETLK) {
+                if (c->has_di) {
+                    protocol_binary_response_getq_with_cksum *get_cksum_resp =
+                        (protocol_binary_response_get_with_cksum *) response_get;
+                    assert(extlen == sizeof(get_cksum_resp->message.body));
+                    c->cksumlen = ntohl(get_cksum_resp->message.body.cksumlen);
+                } else {
+                    assert(extlen == sizeof(response_get->message.body));
+                }
+            }
 
             flags = ntohl(response_get->message.body.flags);
+
         }
 
         item *it = item_alloc(key, keylen, flags, 0, NULL, vlen + 2);
@@ -657,6 +701,9 @@ static void a2b_out_error(conn *uc, uint16_t status) {
     case PROTOCOL_BINARY_RESPONSE_ETMPFAIL:
         out_string(uc, "SERVER_ERROR temporary failure");
         break;
+    case PROTOCOL_BINARY_RESPONSE_CKSUM_FAILED:
+        out_string(uc, "SERVER_ERROR checksum failed");
+        break;
     default:
         out_string(uc, "SERVER_ERROR a2b error");
         break;
@@ -737,6 +784,14 @@ void a2b_process_downstream_response(conn *c) {
                 assert(extlen > 0);
 
                 if (bodylen >= keylen + extlen) {
+                    if (c->cksumlen) {
+                        char chksum_str[c->cksumlen];
+                        memcpy(chksum_str, ITEM_data(it), c->cksumlen);
+                        parse_chksum(chksum_str, it);
+                        it->nbytes -= c->cksumlen;
+                        memmove(ITEM_data(it), ITEM_data(it) + c->cksumlen, it->nbytes);
+                    }
+
                     *(ITEM_data(it) + it->nbytes - 2) = '\r';
                     *(ITEM_data(it) + it->nbytes - 1) = '\n';
 
@@ -824,8 +879,8 @@ void a2b_process_downstream_response(conn *c) {
                      * currently membase does not send ETMPFAIL for
                      * engine error code for ENGINE_TMPFAIL
                      */
-                    d->upstream_suffix = "LOCK_ERROR\r\n";
-                    d->upstream_suffix_len = 0;
+                    d->upstream_suffix = c->rcurr-bodylen;
+                    d->upstream_suffix_len = bodylen;
                     d->upstream_status = status;
                     d->upstream_retry = 0;
                     d->target_host_ident = NULL;
@@ -1061,6 +1116,46 @@ void a2b_process_downstream_response(conn *c) {
         }
         break;
 
+    case PROTOCOL_BINARY_CMD_OPTIONS:
+        conn_set_state(c, conn_pause);
+
+        if (uc != NULL) {
+            assert(uc->next == NULL);
+
+            if (c->cmd == PROTOCOL_BINARY_CMD_OPTIONS) {
+                char *s = add_conn_suffix(uc);
+                zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+                char options[MAX_OPTIONS_LEN];
+                int options_len;
+
+                if (s != NULL) {
+                    memcpy(s, c->cmd_start + sizeof(protocol_binary_response_no_extras), header->response.bodylen);
+                    s[header->response.bodylen] = '\0';
+                    parse_options(NULL, conns, s);
+                    set_options_in_use(conns, uc);
+                    conns->got_options = true;
+
+                    if (settings.verbose > 1) {
+                        moxi_log_write("<%d cproxy_process_a2a_downstream options handling line=%s\n", c->sfd, s);
+                    }
+
+                    if (uc != NULL && uc->waiting_for_options == true) {
+                        uc->waiting_for_options = false;
+                        create_options_for_upstream(uc, options, &options_len);
+                        out_string(uc, options);
+                    }
+                } else {
+                    d->ptd->stats.stats.err_oom++;
+                    cproxy_close_conn(uc);
+                }
+            } else {
+                out_string(uc, "SERVER_ERROR");
+            }
+
+            cproxy_update_event_write(d, uc);
+        }
+        break;
+
     case PROTOCOL_BINARY_CMD_QUIT:
     default:
         assert(false); // TODO: Handled unexpected responses.
@@ -1184,6 +1279,7 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
     uint8_t *out_key    = NULL;
     uint16_t out_keylen = 0;
     uint8_t  out_extlen = 0;
+    uint16_t out_metalen = 0;
 
     if (uc->cmd_curr == PROTOCOL_BINARY_CMD_FLUSH) {
         protocol_binary_request_flush req;
@@ -1196,7 +1292,8 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
                                     uc->noreply, preq,
                                     &out_key,
                                     &out_keylen,
-                                    &out_extlen);
+                                    &out_extlen,
+                                    &out_metalen);
         if (size > 0) {
             assert(out_key == NULL);
             assert(out_keylen == 0);
@@ -1235,7 +1332,8 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
                                     uc->noreply, preq,
                                     &out_key,
                                     &out_keylen,
-                                    &out_extlen);
+                                    &out_extlen,
+                                    &out_metalen);
         if (size > 0) {
             assert(out_extlen == 0);
             assert(uc->noreply == false);
@@ -1281,7 +1379,8 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
     conn *c = cproxy_find_downstream_conn_ex(d, key, key_len,
                                              &local, &vbucket);
 
-    if (uc->cmd_curr == PROTOCOL_BINARY_CMD_VERSION) {
+    if (uc->cmd_curr == PROTOCOL_BINARY_CMD_VERSION ||
+            uc->cmd_curr == PROTOCOL_BINARY_CMD_OPTIONS) {
         key     = NULL;
         key_len = 0;
     }
@@ -1307,7 +1406,8 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
                                         header,
                                         &out_key,
                                         &out_keylen,
-                                        &out_extlen);
+                                        &out_extlen,
+                                        &out_metalen);
             if (size > 0) {
                 assert(size <= a2b_size_max);
                 assert(key     == (char *) out_key);
@@ -1320,7 +1420,11 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
                 }
 
                 header->request.bodylen =
-                    htonl(out_keylen + out_extlen);
+                    htonl(out_keylen + out_extlen + out_metalen);
+
+                if (uc->cmd_curr == PROTOCOL_BINARY_CMD_GETK || uc->cmd_curr == PROTOCOL_BINARY_CMD_GETLK) {
+                    header->request.datatype = PROTOCOL_BINARY_WITH_CKSUM;
+                }
 
                 a2b_set_opaque(c, header, uc->noreply);
 
@@ -1329,6 +1433,10 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
                 if (out_key != NULL &&
                     out_keylen > 0) {
                     add_iov(c, out_key, out_keylen);
+                }
+
+                if (out_metalen) {
+                    add_iov(c, tokens[GETLMETA_TOKEN].value, out_metalen);
                 }
 
                 if (settings.verbose > 2) {
@@ -1598,8 +1706,29 @@ bool cproxy_forward_a2b_item_downstream(downstream *d, short cmd,
 
             assert(c->state == conn_pause);
 
+            zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
             uint8_t  extlen = (cmd == NREAD_APPEND ||
                                cmd == NREAD_PREPEND) ? 0 : 8;
+            int cksumlen = 0;
+            char *str_chksum = add_conn_suffix(c);
+            if (conns->has_di) {
+                if (uc->has_di) {
+                     if (ITEM_chksum2(it) != 0) {
+                         sprintf(str_chksum, "%.4x:%.8x:%.8x", it->chksum_metadata,
+                                 ITEM_chksum(it), ITEM_chksum2(it));
+                     } else {
+                         sprintf(str_chksum, "%.4x:%.8x", it->chksum_metadata,
+                                 ITEM_chksum(it));
+                     }
+                } else {
+                    sprintf(str_chksum, "%.4x:", DI_CHKSUM_SUPPORTED_OFF);
+                }
+
+                // Add checksum length
+                extlen += 4;
+                cksumlen = strlen(str_chksum);
+            }
+
             uint32_t hdrlen =
                 sizeof(protocol_binary_request_header) +
                 extlen;
@@ -1683,13 +1812,27 @@ bool cproxy_forward_a2b_item_downstream(downstream *d, short cmd,
 
                         req_set->message.body.expiration =
                             htonl(it->exptime);
+                        if (conns->has_di) {
+                            req_set->message.body.cksumlen = htonl(cksumlen);
+                            req_set->message.header.request.datatype = PROTOCOL_BINARY_WITH_CKSUM;
+                        }
+                    } else {
+                        protocol_binary_request_append *req_append =
+                            (protocol_binary_request_append *) req;
+
+                        if (conns->has_di) {
+                            req_append->message.body.cksumlen = htonl(cksumlen);
+                            req_append->message.header.request.datatype = PROTOCOL_BINARY_WITH_CKSUM;
+                        }
                     }
 
                     req->request.bodylen =
-                        htonl(it->nkey + (it->nbytes - 2) + extlen);
+                        htonl(it->nkey + (it->nbytes - 2) + extlen + cksumlen);
 
                     if (add_iov(c, ITEM_data(it_hdr), hdrlen) == 0 &&
                         add_iov(c, ITEM_key(it),  it->nkey) == 0 &&
+                        (str_chksum == NULL ||
+                         add_iov(c, str_chksum, cksumlen) == 0) &&
                         add_iov(c, ITEM_data(it), it->nbytes - 2) == 0) {
                         conn_set_state(c, conn_mwrite);
                         c->write_and_go = conn_new_cmd;

@@ -1736,38 +1736,6 @@ int cproxy_server_index(downstream *d, char *key, size_t key_length,
     return (int) mcs_key_hash(&d->mst, key, key_length, vbucket);
 }
 
-static void create_options_for_downstream(char *options, int *options_len) {
-
-    int buflen = *options_len;
-    *options_len = snprintf(options, buflen, "options version=%s DIAlgo=%s", VERSION, DI_CHKSUM_CRC_STR);
-    if (*options_len >= buflen) {
-        fprintf(stderr, "Error creating the options command, buffer too small,"
-                " options len = %d, buffer len = %d\n", *options_len, buflen);
-        *options_len = buflen;
-    }
-}
-
-static void send_options_downstream(downstream *d, conn *c) {
-    char options[MAX_OPTIONS_LEN];
-    int options_len = MAX_OPTIONS_LEN - 1;
-
-    if (settings.verbose > 1)
-        moxi_log_write("send_options_downstream\n");
-
-    conn_set_state(c, conn_pause);
-
-    create_options_for_downstream(options, &options_len);
-
-    if (settings.verbose > 1)
-        moxi_log_write("send_options_downstream options=%s\n",options);
-
-    zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
-    assert( conns != NULL );
-    conns->got_options = true;
-
-    cproxy_forward_a2a_simple_downstream(d, options, c);
-}
-
 void cproxy_assign_downstream(proxy_td *ptd) {
     assert(ptd != NULL);
     conn *uc = NULL;
@@ -3188,7 +3156,7 @@ bool cproxy_on_connect_downstream_conn(conn *c) {
             zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
 
             //Options, if supported, not yet received.  Issues options to downstream connection.
-            if( conns->got_options == true )
+            if(conns->got_options == false)
             {
                 if (settings.verbose > 2) {
                     moxi_log_write("%d: send_options_downstream\n", c->sfd);
@@ -3268,7 +3236,7 @@ zstored_downstream_conns *zstored_get_downstream_conns(LIBEVENT_THREAD *thread,
         conns = calloc(1, sizeof(zstored_downstream_conns));
         if (conns != NULL) {
             conns->host_ident = strdup(host_ident);
-            conns->got_options = true;
+            conns->got_options = false;
             if (conns->host_ident != NULL) {
                 genhash_store(conn_hash, conns->host_ident, conns);
             } else {
@@ -3759,3 +3727,14 @@ void cproxy_front_cache_delete(proxy_td *ptd, char *key, int key_len) {
     }
 }
 
+create_options_for_upstream(conn *c, char *options, int *options_len) {
+    *options_len = sprintf(options, "options version=%s", VERSION);
+    // If we dont understand some option, we obviously cannot make it into a string.
+    // So in case of new pecl and new membase that support somethig more than CRC,
+    // and old mcmux, we will setill be using CRC
+
+    char *chksum_str = GET_CHKSUM_STR(c->tmp_di_algo);
+    if (*chksum_str != '\0')
+        *options_len += sprintf(options + *options_len, " DIAlgo=%s",
+                GET_CHKSUM_STR(c->tmp_di_algo));
+}

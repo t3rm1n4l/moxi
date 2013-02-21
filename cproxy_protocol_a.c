@@ -322,6 +322,7 @@ void cproxy_process_upstream_ascii(conn *c, char *line) {
 
     } else if (ntokens >= 2 &&
                (strncmp(cmd, "options", 7) == 0)) {
+        c->cmd_curr = PROTOCOL_BINARY_CMD_OPTIONS;
         handle_upstream_options(c, line);
     } else {
         out_string(c, "ERROR");
@@ -522,7 +523,7 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
                      uc->peer_port,
                      (char *)NULL,
                      (char *)NULL,
-                     IS_ASCII(uc->protocol));
+                     IS_ASCII(uc->peer_protocol));
             conns = zstored_get_downstream_conns(uc->thread, peer_ident);
             assert(conns != NULL);
             if (conns->has_di) {
@@ -742,5 +743,39 @@ void cproxy_ascii_broadcast_suffix(downstream *d) {
         d->upstream_status = PROTOCOL_BINARY_RESPONSE_SUCCESS;
         d->upstream_retry = 0;
         d->target_host_ident = NULL;
+    }
+}
+
+void create_options_for_downstream(char *options, int *options_len) {
+
+    int buflen = *options_len;
+    *options_len = snprintf(options, buflen, "options version=%s DIAlgo=%s", VERSION, DI_CHKSUM_CRC_STR);
+    if (*options_len >= buflen) {
+        fprintf(stderr, "Error creating the options command, buffer too small,"
+                " options len = %d, buffer len = %d\n", *options_len, buflen);
+        *options_len = buflen;
+    }
+}
+
+void send_options_downstream(downstream *d, conn *c) {
+    char options[MAX_OPTIONS_LEN];
+    int options_len = MAX_OPTIONS_LEN - 1;
+
+    if (settings.verbose > 1)
+        moxi_log_write("send_options_downstream\n");
+
+    conn_set_state(c, conn_pause);
+
+    create_options_for_downstream(options, &options_len);
+
+    if (settings.verbose > 1)
+        moxi_log_write("send_options_downstream options=%s\n",options);
+
+    c->cmd_curr = PROTOCOL_BINARY_CMD_OPTIONS;
+
+    if (c->protocol == proxy_downstream_binary_prot) {
+        cproxy_forward_a2b_simple_downstream(d, options, c);
+    } else {
+        cproxy_forward_a2a_simple_downstream(d, options, c);
     }
 }

@@ -277,7 +277,7 @@ extern "C"
         uint32_t cksumlen;
       } body;
     } message;
-    uint8_t bytes[sizeof(protocol_binary_response_header) + 4];
+    uint8_t bytes[sizeof(protocol_binary_response_header) + 8];
   } protocol_binary_response_get_with_cksum;
 
   typedef protocol_binary_response_get_with_cksum protocol_binary_response_getq_with_cksum;
@@ -469,7 +469,7 @@ extern "C"
                 uint16_t metadata_len;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 8];
     } protocol_binary_request_getl;
 
 #ifdef __cplusplus
