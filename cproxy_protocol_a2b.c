@@ -607,15 +607,13 @@ void cproxy_process_a2b_downstream_nread(conn *c) {
 
             c->cksumlen = 0;
             zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
-            if (c->cmd != PROTOCOL_BINARY_CMD_GETLK) {
-                if (conns->has_di) {
-                    protocol_binary_response_getq_with_cksum *get_cksum_resp =
-                        (protocol_binary_response_get_with_cksum *) response_get;
-                    assert(extlen == sizeof(get_cksum_resp->message.body));
-                    c->cksumlen = ntohl(get_cksum_resp->message.body.cksumlen);
-                } else {
-                    assert(extlen == sizeof(response_get->message.body));
-                }
+            if (conns->has_di) {
+                protocol_binary_response_getq_with_cksum *get_cksum_resp =
+                    (protocol_binary_response_get_with_cksum *) response_get;
+                assert(extlen == sizeof(get_cksum_resp->message.body));
+                c->cksumlen = ntohl(get_cksum_resp->message.body.cksumlen);
+            } else {
+                assert(extlen == sizeof(response_get->message.body));
             }
 
             flags = ntohl(response_get->message.body.flags);
@@ -862,6 +860,14 @@ void a2b_process_downstream_response(conn *c) {
                     assert(extlen > 0);
 
                     if (bodylen >= keylen + extlen) {
+                        if (c->cksumlen) {
+                            char chksum_str[c->cksumlen];
+                            memcpy(chksum_str, ITEM_data(it), c->cksumlen);
+                            parse_chksum(chksum_str, it);
+                            it->nbytes -= c->cksumlen;
+                            memmove(ITEM_data(it), ITEM_data(it) + c->cksumlen, it->nbytes);
+                        }
+
                         *(ITEM_data(it) + it->nbytes - 2) = '\r';
                         *(ITEM_data(it) + it->nbytes - 1) = '\n';
 
