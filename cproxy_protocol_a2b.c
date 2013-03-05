@@ -608,7 +608,7 @@ void cproxy_process_a2b_downstream_nread(conn *c) {
             c->cksumlen = 0;
             zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
             if (c->cmd != PROTOCOL_BINARY_CMD_GETLK) {
-                if (c->has_di) {
+                if (conns->has_di) {
                     protocol_binary_response_getq_with_cksum *get_cksum_resp =
                         (protocol_binary_response_get_with_cksum *) response_get;
                     assert(extlen == sizeof(get_cksum_resp->message.body));
@@ -622,7 +622,7 @@ void cproxy_process_a2b_downstream_nread(conn *c) {
 
         }
 
-        item *it = item_alloc(key, keylen, flags, 0, NULL, vlen + 2);
+        item *it = item_alloc(key, keylen, flags, 0, NULL, vlen + 2, c->cksumlen);
         if (it != NULL) {
             c->item = it;
             c->ritem = ITEM_data(it);
@@ -1518,7 +1518,7 @@ int a2b_multiget_skey(conn *c, char *skey, int skey_length, int vbucket, int key
     char *key     = skey + 1;
     int   key_len = skey_length - 1;
 
-    item *it = item_alloc("b", 1, 0, 0, NULL, sizeof(protocol_binary_request_get));
+    item *it = item_alloc("b", 1, 0, 0, NULL, sizeof(protocol_binary_request_get), 0);
     if (it != NULL) {
         if (add_conn_item(c, it)) {
             protocol_binary_request_getk *req =
@@ -1733,7 +1733,7 @@ bool cproxy_forward_a2b_item_downstream(downstream *d, short cmd,
                 sizeof(protocol_binary_request_header) +
                 extlen;
 
-            item *it_hdr = item_alloc("i", 1, 0, 0, NULL, hdrlen);
+            item *it_hdr = item_alloc("i", 1, 0, 0, NULL, hdrlen, 0);
             if (it_hdr != NULL) {
                 if (add_conn_item(c, it_hdr)) {
                     protocol_binary_request_header *req =

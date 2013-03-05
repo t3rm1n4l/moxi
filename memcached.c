@@ -1148,7 +1148,7 @@ static void complete_incr_bin(conn *c) {
         rsp->message.body.value = mc_swap64(req->message.body.initial);
         it = item_alloc(key, nkey, 0, realtime(req->message.body.expiration),
                         NULL,
-                        INCR_MAX_STORAGE_LEN);
+                        INCR_MAX_STORAGE_LEN, 0);
 
         if (it != NULL) {
             snprintf(ITEM_data(it), INCR_MAX_STORAGE_LEN, "%llu",
@@ -1779,7 +1779,7 @@ static void process_bin_update(conn *c) {
     }
 
     it = item_alloc(key, nkey, req->message.body.flags,
-                    c->funcs->conn_realtime(req->message.body.expiration), NULL, vlen+2);
+                    c->funcs->conn_realtime(req->message.body.expiration), NULL, vlen+2, 0);
 
     if (it == 0) {
         if (! item_size_ok(nkey, req->message.body.flags, vlen + 2)) {
@@ -1850,7 +1850,7 @@ static void process_bin_append_prepend(conn *c) {
         stats_prefix_record_set(key, nkey);
     }
 
-    it = item_alloc(key, nkey, 0, 0, NULL, vlen+2);
+    it = item_alloc(key, nkey, 0, 0, NULL, vlen+2, 0);
 
     if (it == 0) {
         if (! item_size_ok(nkey, 0, vlen + 2)) {
@@ -2077,7 +2077,7 @@ enum store_item_type do_store_item(item *it, int comm, conn *c) {
 
                 flags = (int) strtol(ITEM_suffix(old_it), (char **) NULL, 10);
 
-                new_it = do_item_alloc(key, it->nkey, flags, old_it->exptime, NULL, it->nbytes + old_it->nbytes - 2 /* CRLF */);
+                new_it = do_item_alloc(key, it->nkey, flags, old_it->exptime, NULL, it->nbytes + old_it->nbytes - 2 /* CRLF */, 0);
 
                 if (new_it == NULL) {
                     /* SERVER_ERROR out of memory */
@@ -2726,7 +2726,7 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
         stats_prefix_record_set(key, nkey);
     }
 
-    it = item_alloc(key, nkey, flags, c->funcs->conn_realtime(exptime), chksum_str, vlen);
+    it = item_alloc(key, nkey, flags, c->funcs->conn_realtime(exptime), chksum_str, vlen, 0);
 
     if (it == 0) {
         item tmp_item;
@@ -2867,7 +2867,7 @@ enum delta_result_type do_add_delta(conn *c, item *it, const bool incr,
     res = strlen(buf);
     if (res + 2 > it->nbytes) { /* need to realloc */
         item *new_it;
-        new_it = do_item_alloc(ITEM_key(it), it->nkey, atoi(ITEM_suffix(it) + 1), it->exptime, NULL, res + 2 );
+        new_it = do_item_alloc(ITEM_key(it), it->nkey, atoi(ITEM_suffix(it) + 1), it->exptime, NULL, res + 2, 0);
         if (new_it == 0) {
             return EOM;
         }

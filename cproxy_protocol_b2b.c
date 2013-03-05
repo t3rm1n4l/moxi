@@ -277,7 +277,7 @@ bool cproxy_broadcast_b2b_downstream(downstream *d, conn *uc) {
         }
 
         item *it = item_alloc("h", 1, 0, 0, NULL,
-                              sizeof(protocol_binary_response_header));
+                              sizeof(protocol_binary_response_header), 0);
         if (it != NULL) {
             protocol_binary_response_header *header =
                 (protocol_binary_response_header *) ITEM_data(it);
@@ -361,7 +361,7 @@ void cproxy_process_b2b_downstream(conn *c) {
     int   ikeylen = 1;
 
     c->item = item_alloc(ikey, ikeylen, 0, 0, NULL,
-                         sizeof(c->binary_header) + bodylen);
+                         sizeof(c->binary_header) + bodylen, 0);
     if (c->item != NULL) {
         item *it = c->item;
         void *rb = c->rcurr;

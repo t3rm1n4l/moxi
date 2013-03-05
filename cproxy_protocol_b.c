@@ -62,7 +62,7 @@ void cproxy_process_upstream_binary(conn *c) {
     int   ikeylen = 1;
 
     c->item = item_alloc(ikey, ikeylen, 0, 0, NULL,
-                         sizeof(c->binary_header) + bodylen);
+                         sizeof(c->binary_header) + bodylen, 0);
     if (c->item != NULL) {
         item *it = c->item;
         void *rb = c->rcurr;

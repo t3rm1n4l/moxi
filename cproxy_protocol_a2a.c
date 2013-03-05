@@ -77,7 +77,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
             size_t nkey = tokens[KEY_TOKEN].length;
             char *chksum = (conns->has_di) ? tokens[CHKSUM_INDEX].value : NULL;
 
-            item *it = item_alloc(key, nkey, flags, 0, chksum, vlen + 2);
+            item *it = item_alloc(key, nkey, flags, 0, chksum, vlen + 2, 0);
             if (it != NULL) {
                 if (ntokens == CAS_INDEX + 1 ||
                     safe_strtoull(tokens[CAS_INDEX].value, &cas)) {
@@ -165,7 +165,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
                 //
                 int nline = strlen(line);
 
-                item *it = item_alloc("s", 1, 0, 0, NULL, nline + 2);
+                item *it = item_alloc("s", 1, 0, 0, NULL, nline + 2, 0);
                 if (it != NULL) {
                     strncpy(ITEM_data(it), line, nline);
                     strncpy(ITEM_data(it) + nline, "\r\n", 2);

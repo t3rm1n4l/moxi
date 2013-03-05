@@ -124,10 +124,10 @@ static size_t item_make_header(const uint8_t nkey, const int flags, const int nb
 
 /*@null@*/
 item *do_item_alloc(char *key, const size_t nkey, const int flags,
-                    const rel_time_t exptime, char *chksum_str, const int nbytes) {
+                    const rel_time_t exptime, char *chksum_str, const int nbytes, const int cklen) {
     uint8_t nsuffix;
     char suffix[40];
-    size_t ntotal = item_make_header(nkey + 1, flags, nbytes, suffix, &nsuffix);
+    size_t ntotal = item_make_header(nkey + 1, flags, nbytes - cklen, suffix, &nsuffix);
     if (settings.use_cas) {
         ntotal += sizeof(uint64_t);
     }

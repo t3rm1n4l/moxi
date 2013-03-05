@@ -304,7 +304,7 @@ void protocol_stats_foreach_write(const void *key,
                 uint32_t data_len = line_tokens[VALUE_TOKEN].length;
 
                 item *it = item_alloc("s", 1, 0, 0, NULL,
-                                      sizeof(protocol_binary_response_stats) + key_len + data_len);
+                                      sizeof(protocol_binary_response_stats) + key_len + data_len, 0);
                 if (it != NULL) {
                     protocol_binary_response_stats *header =
                         (protocol_binary_response_stats *) ITEM_data(it);
@@ -340,7 +340,7 @@ void protocol_stats_foreach_write(const void *key,
             return;
         }
 
-        item *it = item_alloc("s", 1, 0, 0, NULL, nline + 2);
+        item *it = item_alloc("s", 1, 0, 0, NULL, nline + 2, 0);
         if (it != NULL) {
             strncpy(ITEM_data(it), line, nline);
             strncpy(ITEM_data(it) + nline, "\r\n", 2);

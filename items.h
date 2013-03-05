@@ -3,7 +3,7 @@ void item_init(void);
 uint64_t get_cas_id(void);
 
 /*@null@*/
-item *do_item_alloc(char *key, const size_t nkey, const int flags, const rel_time_t exptime, char *chksum, const int nbytes);
+item *do_item_alloc(char *key, const size_t nkey, const int flags, const rel_time_t exptime, char *chksum, const int nbytes, const int cklen);
 void item_free(item *it);
 bool item_size_ok(const size_t nkey, const int flags, const int nbytes);
 
