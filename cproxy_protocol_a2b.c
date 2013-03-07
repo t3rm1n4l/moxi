@@ -1145,10 +1145,12 @@ void a2b_process_downstream_response(conn *c) {
                         moxi_log_write("<%d cproxy_process_a2a_downstream options handling line=%s\n", c->sfd, s);
                     }
 
-                    if (uc != NULL && uc->waiting_for_options == true) {
+                    if (uc->waiting_for_options == true) {
                         uc->waiting_for_options = false;
                         create_options_for_upstream(uc, options, &options_len);
                         out_string(uc, options);
+                    } else {
+                        cproxy_forward_or_error(d);
                     }
                 } else {
                     d->ptd->stats.stats.err_oom++;
