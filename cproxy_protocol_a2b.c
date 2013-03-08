@@ -419,8 +419,6 @@ bool a2b_fill_request_token(struct A2BSpec *spec,
 
         *out_metalen = cmd_tokens[cur_token].length;
         req->message.body.metadata_len = htons(*out_metalen);
-        *out_extlen = sizeof(req->message.body);
-        header->request.extlen   = *out_extlen;
         break;
    }
 
@@ -836,6 +834,14 @@ void a2b_process_downstream_response(conn *c) {
         assert(extlen > 0);
 
         if (bodylen >= keylen + extlen) {
+            if (c->cksumlen) {
+                char chksum_str[c->cksumlen];
+                memcpy(chksum_str, ITEM_data(it), c->cksumlen);
+                parse_chksum(chksum_str, it);
+                it->nbytes -= c->cksumlen;
+                memmove(ITEM_data(it), ITEM_data(it) + c->cksumlen, it->nbytes);
+            }
+
             *(ITEM_data(it) + it->nbytes - 2) = '\r';
             *(ITEM_data(it) + it->nbytes - 1) = '\n';
 
@@ -1427,6 +1433,12 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
                     header->request.opaque   = htonl(vbucket);
                 }
 
+                if (uc->cmd_curr == PROTOCOL_BINARY_CMD_GETLK) {
+                    protocol_binary_request_getl req;
+                    out_extlen = sizeof(req.message.body);
+                    header->request.extlen = out_extlen;
+                }
+
                 header->request.bodylen =
                     htonl(out_keylen + out_extlen + out_metalen);
 
@@ -1537,7 +1549,7 @@ int a2b_multiget_skey(conn *c, char *skey, int skey_length, int vbucket, int key
             req->message.header.request.magic  = PROTOCOL_BINARY_REQ;
             req->message.header.request.opcode = PROTOCOL_BINARY_CMD_GETKQ;
             req->message.header.request.keylen = htons((uint16_t) key_len);
-            req->message.header.request.datatype = PROTOCOL_BINARY_RAW_BYTES;
+            req->message.header.request.datatype = PROTOCOL_BINARY_WITH_CKSUM;
             req->message.header.request.bodylen  = htonl(key_len);
             req->message.header.request.opaque   = htonl(key_index);
 
