@@ -116,9 +116,9 @@ bool parse_chksum(char *chksum_str, item *it) {
  * Returns the total size of the header.
  */
 static size_t item_make_header(const uint8_t nkey, const int flags, const int nbytes,
-                     char *suffix, uint8_t *nsuffix) {
+                     char *suffix, uint8_t *nsuffix, int cklen) {
     /* suffix is defined at 40 chars elsewhere.. */
-    *nsuffix = (uint8_t) snprintf(suffix, 40, " %d %d\r\n", flags, nbytes - 2);
+    *nsuffix = (uint8_t) snprintf(suffix, 40, " %d %d\r\n", flags, nbytes - cklen - 2);
     return sizeof(item) + nkey + *nsuffix + nbytes;
 }
 
@@ -127,7 +127,7 @@ item *do_item_alloc(char *key, const size_t nkey, const int flags,
                     const rel_time_t exptime, char *chksum_str, const int nbytes, const int cklen) {
     uint8_t nsuffix;
     char suffix[40];
-    size_t ntotal = item_make_header(nkey + 1, flags, nbytes - cklen, suffix, &nsuffix);
+    size_t ntotal = item_make_header(nkey + 1, flags, nbytes, suffix, &nsuffix, cklen);
     if (settings.use_cas) {
         ntotal += sizeof(uint64_t);
     }
@@ -314,7 +314,7 @@ bool item_size_ok(const size_t nkey, const int flags, const int nbytes) {
     uint8_t nsuffix;
 
     return slabs_clsid(item_make_header(nkey + 1, flags, nbytes,
-                                        prefix, &nsuffix)) != 0;
+                                        prefix, &nsuffix, 0)) != 0;
 }
 
 static void item_link_q(item *it) { /* item is the new head */
