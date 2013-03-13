@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <assert.h>
 #include <math.h>
+#include <sys/param.h>
 #include "memcached.h"
 #include "cproxy.h"
 #include "work.h"
@@ -277,9 +278,9 @@ int a2b_fill_request(short    cmd,
 
     struct A2BSpec *spec = a2b_spec_map[cmd];
     if (spec != NULL) {
-        if (cmd_ntokens >= (spec->ntokens - spec->num_optional) &&
-            cmd_ntokens <= (spec->ntokens)) {
+        if (cmd_ntokens >= (spec->ntokens - spec->num_optional)) {
             header->request.magic = PROTOCOL_BINARY_REQ;
+            int max_tokens = MIN(cmd_ntokens, spec->ntokens);
 
             if (noreply) {
                 assert(spec->cmd != (protocol_binary_command) -1);
@@ -297,9 +298,9 @@ int a2b_fill_request(short    cmd,
 
             // Start at 1 to skip the CMD_TOKEN.
             //
-            for (int i = 1; i < cmd_ntokens - 1; i++) {
+            for (int i = 1; i < max_tokens - 1; i++) {
                 if (a2b_fill_request_token(spec, i,
-                                           cmd_tokens, cmd_ntokens,
+                                           cmd_tokens, max_tokens,
                                            header,
                                            out_key,
                                            out_keylen,
