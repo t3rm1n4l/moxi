@@ -151,6 +151,7 @@ item *do_item_alloc(char *key, const size_t nkey, const int flags,
         itx->exptime = exptime;
         memcpy(ITEM_suffix(itx), suffix, (size_t)nsuffix);
         itx->nsuffix = nsuffix;
+        itx->chksum.crc32.first = itx->chksum.crc32.second = 0;
 
         itx->chksum_metadata = DI_CHKSUM_UNSUPPORTED;
         if (chksum_str && parse_chksum(chksum_str, itx) == false) {

@@ -442,6 +442,29 @@ bool a2b_fill_request_token(struct A2BSpec *spec,
     return true;
 }
 
+/*
+ * Parse the checksum from membase item response and format it
+ * correctly for ascii upstream response
+ */
+static void parse_item_response(conn *c, item *it, int cklen) {
+    if (cklen) {
+        char chksum_str[cklen];
+        memcpy(chksum_str, ITEM_data(it), cklen);
+        chksum_str[cklen] = '\0';
+        if (parse_chksum(chksum_str, it) == false && settings.verbose > 1) {
+                moxi_log_write("<%d parse_item_response cmd:%x %d\n",
+                        c->sfd, c->cmd);
+        }
+
+        it->nbytes -= cklen;
+        memmove(ITEM_data(it), ITEM_data(it) + cklen, it->nbytes);
+    }
+
+    *(ITEM_data(it) + it->nbytes - 2) = '\r';
+    *(ITEM_data(it) + it->nbytes - 1) = '\n';
+}
+
+
 /* Called when we receive a binary response header from
  * a downstream server, via try_read_command()/drive_machine().
  */
@@ -781,17 +804,7 @@ void a2b_process_downstream_response(conn *c) {
                 assert(extlen > 0);
 
                 if (bodylen >= keylen + extlen) {
-                    if (c->cksumlen) {
-                        char chksum_str[c->cksumlen];
-                        memcpy(chksum_str, ITEM_data(it), c->cksumlen);
-                        parse_chksum(chksum_str, it);
-                        it->nbytes -= c->cksumlen;
-                        memmove(ITEM_data(it), ITEM_data(it) + c->cksumlen, it->nbytes);
-                    }
-
-                    *(ITEM_data(it) + it->nbytes - 2) = '\r';
-                    *(ITEM_data(it) + it->nbytes - 1) = '\n';
-
+                    parse_item_response(c, it, c->cksumlen);
                     multiget_ascii_downstream_response(d, it);
                 } else {
                     assert(false); // TODO.
@@ -835,17 +848,7 @@ void a2b_process_downstream_response(conn *c) {
         assert(extlen > 0);
 
         if (bodylen >= keylen + extlen) {
-            if (c->cksumlen) {
-                char chksum_str[c->cksumlen];
-                memcpy(chksum_str, ITEM_data(it), c->cksumlen);
-                parse_chksum(chksum_str, it);
-                it->nbytes -= c->cksumlen;
-                memmove(ITEM_data(it), ITEM_data(it) + c->cksumlen, it->nbytes);
-            }
-
-            *(ITEM_data(it) + it->nbytes - 2) = '\r';
-            *(ITEM_data(it) + it->nbytes - 1) = '\n';
-
+            parse_item_response(c, it, c->cksumlen);
             multiget_ascii_downstream_response(d, it);
         } else {
             assert(false); // TODO.
@@ -867,17 +870,7 @@ void a2b_process_downstream_response(conn *c) {
                     assert(extlen > 0);
 
                     if (bodylen >= keylen + extlen) {
-                        if (c->cksumlen) {
-                            char chksum_str[c->cksumlen];
-                            memcpy(chksum_str, ITEM_data(it), c->cksumlen);
-                            parse_chksum(chksum_str, it);
-                            it->nbytes -= c->cksumlen;
-                            memmove(ITEM_data(it), ITEM_data(it) + c->cksumlen, it->nbytes);
-                        }
-
-                        *(ITEM_data(it) + it->nbytes - 2) = '\r';
-                        *(ITEM_data(it) + it->nbytes - 1) = '\n';
-
+                        parse_item_response(c, it, c->cksumlen);
                         cproxy_upstream_ascii_item_response(it, uc, -1);
                     } else {
                         assert(false); // TODO.
@@ -1434,6 +1427,8 @@ bool cproxy_forward_a2b_simple_downstream(downstream *d,
                     header->request.opaque   = htonl(vbucket);
                 }
 
+                // a2b_fill_request cannot identify command while doing token
+                // parsing.
                 if (uc->cmd_curr == PROTOCOL_BINARY_CMD_GETLK) {
                     protocol_binary_request_getl req;
                     out_extlen = sizeof(req.message.body);
