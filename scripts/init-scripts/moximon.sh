@@ -9,6 +9,7 @@ PIDFILE="/var/run/moxi/moxi.pid"
 MAXCONN=10000
 PORT=11213
 THREADS=2
+SOCKET="/var/run/moxi/moxi.sock"
 CONNS_PER_MEMCACHED=8
 PERMS=766
 NUM_FAILURES=20
@@ -24,7 +25,7 @@ while :; do
     if [ -f /etc/sysconfig/moxi ];then
         . /etc/sysconfig/moxi
     fi
-    daemon /opt/moxi/bin/moxi -d -X -u $USER -c $MAXCONN -t $THREADS -p $PORT -a $PERMS -P $PIDFILE -m $MAX_MEMORY $OPTIONS -Z downstream_conn_max=$CONNS_PER_MEMCACHED -v
+    daemon /opt/moxi/bin/moxi -d -X -u $USER -c $MAXCONN -t $THREADS -s $SOCKET -a $PERMS -P $PIDFILE -m $MAX_MEMORY $OPTIONS -Z downstream_conn_max=$CONNS_PER_MEMCACHED -v
     RETVAL=$?
     if [ $RETVAL -ne 0 ];then
         echo $RETVAL
