@@ -532,7 +532,10 @@ void cproxy_process_a2b_downstream(conn *c) {
         assert(c->cmd == PROTOCOL_BINARY_CMD_GET ||
                c->cmd == PROTOCOL_BINARY_CMD_GETK ||
                c->cmd == PROTOCOL_BINARY_CMD_GETLK ||
-               c->cmd == PROTOCOL_BINARY_CMD_STAT);
+               c->cmd == PROTOCOL_BINARY_CMD_STAT ||
+               c->cmd == PROTOCOL_BINARY_CMD_APPEND ||
+               c->cmd == PROTOCOL_BINARY_CMD_PREPEND);
+
 
 
         bin_read_key(c, bin_reading_get_key, extlen);
