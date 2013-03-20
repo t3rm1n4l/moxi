@@ -457,6 +457,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     c->cmd_start_time = 0;
     c->cmd_retries = 0;
     c->corked = NULL;
+    c->host_ident = NULL;
     c->peer_host = NULL;
     c->peer_protocol = 0;
     c->peer_port = 0;
