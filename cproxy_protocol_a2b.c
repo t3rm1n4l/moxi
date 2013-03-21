@@ -145,7 +145,7 @@ struct A2BSpec a2b_specs[] = {
       .cmdq = -1,
       .size = sizeof(protocol_binary_request_version)
     },
-    { .line = "getl <key> <xpiration> [meta]", // Single-key GETL.
+    { .line = "getl <key> [xpiration] [meta]", // Single-key GETL.
       .cmd  = PROTOCOL_BINARY_CMD_GETLK,
       .cmdq = -1,
       .size = sizeof(protocol_binary_request_getl)
