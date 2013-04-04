@@ -739,6 +739,7 @@ void set_options_in_use(zstored_downstream_conns *conns, conn *uc) {
             case DI_CHKSUM_SUPPORTED_OFF:
             case DI_CHKSUM_CRC:
                 upstream_di_algo = downstream_di_algo & DI_CHKSUM_MASK;
+                break;
             default:
                 upstream_di_algo = DI_CHKSUM_SUPPORTED_OFF;
         }
