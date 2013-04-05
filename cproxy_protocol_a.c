@@ -159,7 +159,7 @@ void cproxy_process_upstream_ascii(conn *c, char *line) {
             SEEN(STATS_CMD_GET, cmd[3] == 's', 0);
         }
 
-    } else if ((ntokens >= 6 || ntokens <= 8) &&
+    } else if ((ntokens >= 6 && ntokens <= 8) &&
                 (false == self_command) &&
                ((strncmp(cmd, "add", 3) == 0 &&
                  (comm = NREAD_ADD) &&
@@ -196,7 +196,7 @@ void cproxy_process_upstream_ascii(conn *c, char *line) {
             }
         }
 
-    } else if ((ntokens >= 7 || ntokens <= 9) &&
+    } else if ((ntokens >= 7 && ntokens <= 9) &&
                (false == self_command) &&
                (strncmp(cmd, "cas", 3) == 0 &&
                 (comm = NREAD_CAS) &&
