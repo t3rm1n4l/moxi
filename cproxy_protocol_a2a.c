@@ -65,7 +65,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
 #define CHKSUM_INDEX    4
 #define CAS_INDEX       (4 + offset)
 
-        if (conns->has_di)
+        if (settings.enable_mcmux_mode == false || conns->has_di)
             offset++;
         ntokens = scan_tokens(line, tokens, MAX_TOKENS, &clen);
         if (ntokens >= 5 && // Accounts for extra termimation token.
@@ -75,7 +75,7 @@ void cproxy_process_a2a_downstream(conn *c, char *line) {
             safe_strtoul(tokens[VAL_LEN_INDEX].value, (uint32_t *) &vlen)) {
             char  *key  = tokens[KEY_TOKEN].value;
             size_t nkey = tokens[KEY_TOKEN].length;
-            char *chksum = (conns->has_di) ? tokens[CHKSUM_INDEX].value : NULL;
+            char *chksum = (settings.enable_mcmux_mode == false || conns->has_di) ? tokens[CHKSUM_INDEX].value : NULL;
 
             item *it = item_alloc(key, nkey, flags, 0, chksum, vlen + 2, 0);
             if (it != NULL) {
@@ -637,7 +637,7 @@ bool cproxy_forward_a2a_item_downstream(downstream *d, short cmd,
                 }
 
 
-                if (conns->has_di) {
+                if (settings.enable_mcmux_mode == false || conns->has_di) {
                     // The downstream supports DI, so we have to
                     // add a checksum to the header.
                     str_chksum = add_conn_suffix(c);
@@ -797,7 +797,12 @@ void parse_options(conn *c, zstored_downstream_conns *conns, char *options) {
     }
     else if (conns) {
         conns->data_integrity_algo = algo;
-        conns->has_di = has_di;
+        if (settings.enable_mcmux_mode) {
+            conns->has_di = has_di;
+        } else {
+            conns->has_di = true;
+        }
+
         if (settings.verbose > 2)
             fprintf(stderr, "Set DI support for downstream [%s] to %d\n", conns->host_ident,conns->has_di);
     }

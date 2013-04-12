@@ -632,7 +632,7 @@ void cproxy_process_a2b_downstream_nread(conn *c) {
 
             c->cksumlen = 0;
             zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
-            if (conns->has_di) {
+            if (settings.enable_mcmux_mode == false || conns->has_di) {
                 protocol_binary_response_getq_with_cksum *get_cksum_resp =
                     (protocol_binary_response_get_with_cksum *) response_get;
                 assert(extlen == sizeof(get_cksum_resp->message.body));
@@ -1710,6 +1710,7 @@ bool cproxy_forward_a2b_item_downstream(downstream *d, short cmd,
     //
     int  vbucket = -1;
     bool local;
+    bool downs_has_di = true;
 
     conn *c = cproxy_find_downstream_conn_ex(d, ITEM_key(it), it->nkey,
                                              &local, &vbucket);
@@ -1725,12 +1726,16 @@ bool cproxy_forward_a2b_item_downstream(downstream *d, short cmd,
 
             assert(c->state == conn_pause);
 
-            zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+            if (settings.enable_mcmux_mode) {
+                zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+                downs_has_di = conns->has_di;
+            }
+
             uint8_t  extlen = (cmd == NREAD_APPEND ||
                                cmd == NREAD_PREPEND) ? 0 : 8;
             int cksumlen = 0;
             char *str_chksum = add_conn_suffix(c);
-            if (conns->has_di) {
+            if (downs_has_di) {
                 if (uc->has_di) {
                      if (ITEM_chksum2(it) != 0) {
                          sprintf(str_chksum, "%.4x:%.8x:%.8x", it->chksum_metadata,
@@ -1825,13 +1830,12 @@ bool cproxy_forward_a2b_item_downstream(downstream *d, short cmd,
                         cmd != NREAD_PREPEND) {
                         protocol_binary_request_set *req_set =
                             (protocol_binary_request_set *) req;
-
                         req_set->message.body.flags =
                             htonl(strtoul(ITEM_suffix(it), NULL, 10));
 
                         req_set->message.body.expiration =
                             htonl(it->exptime);
-                        if (conns->has_di) {
+                        if (downs_has_di) {
                             req_set->message.body.cksumlen = htonl(cksumlen);
                             req_set->message.header.request.datatype = PROTOCOL_BINARY_WITH_CKSUM;
                         }
@@ -1839,7 +1843,7 @@ bool cproxy_forward_a2b_item_downstream(downstream *d, short cmd,
                         protocol_binary_request_append *req_append =
                             (protocol_binary_request_append *) req;
 
-                        if (conns->has_di) {
+                        if (downs_has_di) {
                             req_append->message.body.cksumlen = htonl(cksumlen);
                             req_append->message.header.request.datatype = PROTOCOL_BINARY_WITH_CKSUM;
                         }

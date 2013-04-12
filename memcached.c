@@ -2682,15 +2682,21 @@ void process_update_command(conn *c, token_t *tokens, const size_t ntokens, int 
     nkey = tokens[KEY_TOKEN].length;
 
     if (c->has_di) {
-        snprintf(peer_ident, MCS_IDENT_SIZE,
-                 "%s:%d:%s:%s:%d",
-                 c->peer_host,
-                 c->peer_port,
-                 (char *)NULL,
-                 (char *)NULL,
-                 IS_ASCII(c->peer_protocol));
-        conns = zstored_get_downstream_conns(c->thread, peer_ident);
-        if (conns && conns->has_di) {
+        bool is_chksum_supported = true;
+        if (settings.enable_mcmux_mode) {
+            snprintf(peer_ident, MCS_IDENT_SIZE,
+                     "%s:%d:%s:%s:%d",
+                     c->peer_host,
+                     c->peer_port,
+                     (char *)NULL,
+                     (char *)NULL,
+                     IS_ASCII(c->peer_protocol));
+            conns = zstored_get_downstream_conns(c->thread, peer_ident);
+
+            is_chksum_supported = conns->has_di;
+        }
+
+        if (is_chksum_supported) {
             offset++;
             chksum_str = tokens[CHKSUM_INDEX].value;
         }

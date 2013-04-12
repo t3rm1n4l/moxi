@@ -526,7 +526,7 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
                      IS_ASCII(uc->peer_protocol));
             conns = zstored_get_downstream_conns(uc->thread, peer_ident);
             assert(conns != NULL);
-            if (conns->has_di) {
+            if (settings.enable_mcmux_mode == false || conns->has_di) {
                 str_chksum = add_conn_suffix(uc);
                 if (ITEM_chksum2(it) != 0) {
                     sprintf(str_chksum, " %.4x:%.8x:%.8x", it->chksum_metadata,
