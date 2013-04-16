@@ -16,6 +16,8 @@ NUM_FAILURES=20
 RETRY_TIMEOUT=30
 OPTIONS=""
 MAX_MEMORY=256
+MCMUX_MODE=1
+VBS_SERVER="none"
 
 # spit everything to syslog using logger
 exec &> >(logger -t '[moxi]' --)
@@ -25,7 +27,14 @@ while :; do
     if [ -f /etc/sysconfig/moxi ];then
         . /etc/sysconfig/moxi
     fi
-    daemon /opt/moxi/bin/moxi -d -X -u $USER -c $MAXCONN -t $THREADS -s $SOCKET -a $PERMS -P $PIDFILE -m $MAX_MEMORY $OPTIONS -Z downstream_conn_max=$CONNS_PER_MEMCACHED -v
+
+    if [ $MCMUX_MODE -eq 1 ];
+    then
+        daemon /opt/moxi/bin/moxi -d -X -u $USER -c $MAXCONN -t $THREADS -s $SOCKET -a $PERMS -P $PIDFILE -m $MAX_MEMORY $OPTIONS -Z downstream_conn_max=$CONNS_PER_MEMCACHED -v
+    else
+        daemon /opt/moxi/bin/moxi -d -P $PIDFILE -V $VBS_SERVER -u $USER -v
+    fi
+
     RETVAL=$?
     if [ $RETVAL -ne 0 ];then
         echo $RETVAL
