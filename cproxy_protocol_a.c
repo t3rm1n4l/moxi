@@ -517,16 +517,21 @@ void cproxy_upstream_ascii_item_response(item *it, conn *uc,
         // checksums) AND
         // upstream understands DI
         if (uc->has_di) {
-            snprintf(peer_ident, MCS_IDENT_SIZE,
-                     "%s:%d:%s:%s:%d",
-                     uc->peer_host,
-                     uc->peer_port,
-                     (char *)NULL,
-                     (char *)NULL,
-                     IS_ASCII(uc->peer_protocol));
-            conns = zstored_get_downstream_conns(uc->thread, peer_ident);
-            assert(conns != NULL);
-            if (settings.enable_mcmux_mode == false || conns->has_di) {
+            bool has_di = true;
+            if (settings.enable_mcmux_mode) {
+                snprintf(peer_ident, MCS_IDENT_SIZE,
+                         "%s:%d:%s:%s:%d",
+                         uc->peer_host,
+                         uc->peer_port,
+                         (char *)NULL,
+                         (char *)NULL,
+                         IS_ASCII(uc->peer_protocol));
+                conns = zstored_get_downstream_conns(uc->thread, peer_ident);
+                assert(conns != NULL);
+                has_di = conns->has_di;
+            }
+
+            if (has_di) {
                 str_chksum = add_conn_suffix(uc);
                 if (ITEM_chksum2(it) != 0) {
                     sprintf(str_chksum, " %.4x:%.8x:%.8x", it->chksum_metadata,

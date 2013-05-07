@@ -1191,6 +1191,14 @@ bool cproxy_forward_a2b_downstream(downstream *d) {
     assert(IS_PROXY(uc->protocol));
 
     int server_index = -1;
+    if (settings.enable_mcmux_mode == false &&  uc->cmd_curr == PROTOCOL_BINARY_CMD_OPTIONS) {
+        char options[MAX_OPTIONS_LEN];
+        int options_len;
+        uc->tmp_di_algo = DI_CHKSUM_CRC;
+        create_options_for_upstream(uc, options, &options_len);
+        out_string(uc, options);
+        return true;
+    }
 
     if (cproxy_is_broadcast_cmd(uc->cmd_curr) == true) {
         cproxy_ascii_broadcast_suffix(d);

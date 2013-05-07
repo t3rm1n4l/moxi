@@ -1652,7 +1652,7 @@ conn *cproxy_find_downstream_conn_ex(downstream *d,
     int s = cproxy_server_index(d, key, key_length, &v);
 
     if (settings.verbose > 2 && s >= 0) {
-        moxi_log_write("%d: server_index %d, vbucket %d, conn %d\n", s, v,
+        moxi_log_write("server_index %d, vbucket %d, upstream conn %d downstream conn %d\n", s, v,
                        (d->upstream_conn != NULL ?
                         d->upstream_conn->sfd : 0),
                        (d->downstream_conns[s] == NULL ?
@@ -3164,8 +3164,11 @@ bool cproxy_on_connect_downstream_conn(conn *c) {
             zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
 
             //Options, if supported, not yet received.  Issues options to downstream connection.
-            if(conns->got_options == false)
-            {
+            if (settings.enable_mcmux_mode == false) {
+                conns->data_integrity_algo = DI_CHKSUM_CRC;
+                conns->has_di = true;
+                set_options_in_use(conns, c);
+            } else if(conns->got_options == false) {
                 if (settings.verbose > 2) {
                     moxi_log_write("%d: send_options_downstream\n", c->sfd);
                 }
