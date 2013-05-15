@@ -25,7 +25,7 @@ if [ ! -e "$SOURCE/libvbucket" ];
 then
     echo Building libvbucket...
     mkdir -p $SOURCE/libvbucket
-    git clone git://github.com/membase/libvbucket.git $SOURCE/libvbucket
+    git clone git@github-ca.corp.zynga.com:slakshman/libvbucket.git $SOURCE/libvbucket
     (cd $SOURCE/libvbucket && ./config/autorun.sh && ./configure --prefix=$PREFIX && make install)
 fi
 
