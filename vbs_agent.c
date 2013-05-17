@@ -57,7 +57,7 @@ int connect_server(vbs_config_t *config) {
 //read data from socket. Called when data available in the socket
 //read an entire chunk before returning
 int read_socket(int fd, char **buf, int heartbeat) {
-    int data_len;
+    int data_len = 0;
 
     if (heartbeat) {
         struct timeval tv={heartbeat, 0};
