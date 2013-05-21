@@ -57,12 +57,14 @@ int connect_server(vbs_config_t *config) {
 //read data from socket. Called when data available in the socket
 //read an entire chunk before returning
 int read_socket(int fd, char **buf, int heartbeat) {
-    int data_len = 0;
+    int data_len = 0, rlen = 0, len;
+    char *wbuf;
 
     if (heartbeat) {
         struct timeval tv={heartbeat, 0};
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (char *) &tv, sizeof(tv));
     }
+
 
     //read four bytes from the socket
     read(fd, &data_len, sizeof(data_len));
@@ -71,13 +73,23 @@ int read_socket(int fd, char **buf, int heartbeat) {
         return data_len;
     }
     data_len = ntohl(data_len);
-    *buf = malloc(data_len);
+    wbuf = *buf = malloc(data_len);
+    // Read full
+    while (data_len != rlen) {
+        len = read(fd, (void *)wbuf, data_len - rlen);
+        if (len > 0) {
+            wbuf += len;
+            rlen += len;
+        } else if (len == EWOULDBLOCK) { // timed out
+            return 0;
+        } else if (len != EINTR && len != EAGAIN) {
+            break;
+        }
+    }
 
-
-    if (data_len != read(fd, (void *)*buf, data_len)) {
-
+    if (len <= 0) {
        // socket is not non blocking. return with an error
-        moxi_log_write("ERROR: Unable to read from socket  %d\n", fd);
+        moxi_log_write("ERROR: Unable to read from socket %d (%s)\n", fd, strerror(len));
         free(*buf);
         return -1;
     }
