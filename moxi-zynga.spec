@@ -16,7 +16,14 @@ chmod a+x /opt/moxi/moximon.sh
 chmod a+x /etc/init.d/moxi
 /sbin/ldconfig /opt/moxi
 
+if [ -e /etc/rsyslog.d ];
+then
+    echo  ':syslogtag,contains,"moxi" /var/log/moxi.log' > /etc/rsyslog.d/moxi.conf
+fi
+/etc/init.d/rsyslog restart
+
 %files
 /opt/moxi/*
 /etc/init.d/moxi
+
 
