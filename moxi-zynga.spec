@@ -19,8 +19,19 @@ chmod a+x /etc/init.d/moxi
 if [ -e /etc/rsyslog.d ];
 then
     echo  ':syslogtag,contains,"moxi" /var/log/moxi.log' > /etc/rsyslog.d/moxi.conf
-fi
 /etc/init.d/rsyslog restart
+else if [ -e /etc/syslog-ng/syslog-ng.conf ];
+then
+    sed -i '/_moxi/d' /etc/syslog-ng/syslog-ng.conf
+
+    cat <<EOF >> /etc/syslog-ng/syslog-ng.conf
+
+destination d_moxi { file("/var/log/moxi.log" owner("root") group ("root") perm(0644) ); };
+filter f_moxi { match('moxi'); };
+log { source(s_sys); filter(f_moxi); destination(d_mb_backup); };
+EOF
+    /etc/init.d/syslog-ng restart
+fi
 
 %files
 /opt/moxi/*
