@@ -20,7 +20,7 @@ if [ -e /etc/rsyslog.d ];
 then
     echo  ':syslogtag,contains,"moxi" /var/log/moxi.log' > /etc/rsyslog.d/moxi.conf
 /etc/init.d/rsyslog restart
-else if [ -e /etc/syslog-ng/syslog-ng.conf ];
+elif [ -e /etc/syslog-ng/syslog-ng.conf ];
 then
     sed -i '/_moxi/d' /etc/syslog-ng/syslog-ng.conf
 

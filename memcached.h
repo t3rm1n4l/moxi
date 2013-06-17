@@ -4,6 +4,8 @@
  * The main memcached header holding commonly used data
  * structures and function prototypes.
  */
+#ifndef MEMCACHED_H
+#define MEMCACHED_H
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -699,3 +701,4 @@ extern void drop_privileges(void);
 void start_main(char *arg0, ...);
 
 void process_bin_proxy_stats(conn *c);
+#endif

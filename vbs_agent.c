@@ -197,6 +197,10 @@ retry:
 
             free(buf);
 
+            pthread_mutex_lock(&vbsagent_stats.mutex);
+            vbsagent_stats.config_received++;
+            pthread_mutex_unlock(&vbsagent_stats.mutex);
+
             write_len(OK_CMD, vbs_fd);
             if (write(vbs_fd, OK_CMD, strlen(OK_CMD)) < 0) {
                 moxi_log_write("ERROR: Unable to write to socket retry connection  %s\n", config->hostname);
@@ -213,9 +217,16 @@ int start_vbs_config(vbs_config_t config) {
     pthread_t thread;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
+    vbsagent_stats.config_received = 0;
 
     pthread_create(&thread, &attr, (void *)vbs_get_config, &config);
 
     return 1;
 
+}
+
+void proxy_stats_dump_vbsagent(ADD_STAT add_stats, conn *c, const char *prefix) {
+    pthread_mutex_lock(&vbsagent_stats.mutex);
+    APPEND_PREFIX_STAT("config_received", "%d", vbsagent_stats.config_received);
+    pthread_mutex_unlock(&vbsagent_stats.mutex);
 }

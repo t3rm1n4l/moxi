@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <assert.h>
 #include "log.h"
+#include "memcached.h"
 //#include "cproxy.h"
 
 #ifdef HAVE_CONFLATE_H
@@ -20,7 +21,6 @@
 
 
 typedef struct {
-
     char *hostname;       // hostname of vbs server
     int port;             // port of vbs server
     void *userdata;       // proxy configuration to return in callbacl
@@ -28,8 +28,15 @@ typedef struct {
 
 } vbs_config_t;
 
+// VBS agent stats container
+struct {
+    pthread_mutex_t   mutex;
+    uint64_t          config_received;
+} vbsagent_stats;
+
 int start_vbs_config(vbs_config_t config);
 
+void proxy_stats_dump_vbsagent(ADD_STAT add_stats, conn *c, const char *prefix);
 
 #endif
 

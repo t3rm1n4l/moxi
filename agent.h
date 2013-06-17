@@ -28,7 +28,6 @@ proxy_main *cproxy_init_vbs_agent_start(char *hostname,
                                         proxy_behavior behavior,
                                         int nthreads);
 
-
 #ifdef HAVE_CONFLATE_H
 conflate_result on_conflate_new_config(void *userdata, kvpair_t *config);
 

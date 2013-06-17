@@ -3153,6 +3153,10 @@ void process_stats_proxy_command(conn *c, token_t *tokens, const size_t ntokens)
             server_stats(&append_stats, c, "memcached:stats:" );
         }
 
+        if (settings.enable_vbs_mode) {
+            proxy_stats_dump_vbsagent(&append_stats, c, "vbsagent:config:");
+        }
+
 #ifdef HAVE_CONFLATE_H
         proxy_stats_dump_proxy_main(&append_stats, c, &psci);
 
