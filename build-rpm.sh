@@ -8,9 +8,16 @@ buildtmp="$(pwd)/build/"
 topdir="$(pwd)/build/"
 version=$(cat VERSION)
 mkdir -p $topdir/{SRPMS,RPMS,BUILD,SOURCES}
+
+if grep -q CentOS /etc/issue
+then
+    echo Installing depends...
+    sudo yum install rpmdevtools gcc-c++ libtool -y
+fi
+
 if [ ! -e $prefix ];
 then
-    ./build.sh $prefix
+    bash -xe build.sh $prefix
 fi
 
 mkdir -p $buildpath/etc/init.d/

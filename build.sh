@@ -34,7 +34,7 @@ then
    echo Building libmemcached
    mkdir -p $SOURCE/libmemcached
    git clone git@github-ca.corp.zynga.com:membase/libmemcached.git $SOURCE/libmemcached
-   (cd $SOURCE/libmemcached && ./config/autorun.sh && ./configure --prefix=$PREFIX --without-memcached && make install)
+   (cd $SOURCE/libmemcached && ./config/autorun.sh && ./configure --prefix=$PREFIX --enable-isasl --with-libevent=$PREFIX --without-memcached && make install)
 fi
 
 echo Building moxi...
