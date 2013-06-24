@@ -803,6 +803,7 @@ typedef struct {
     int data_integrity_algo; // The data integrity algo supported by the downstream
     bool has_di; // Whether the downstream understands DI
     bool got_options;
+    volatile uint32_t *num_connect_fails;
 
 } zstored_downstream_conns;
 

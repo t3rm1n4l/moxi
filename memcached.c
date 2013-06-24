@@ -196,6 +196,7 @@ static void settings_init(void) {
     settings.reqs_per_event = 20;
     settings.backlog = 1024;
     settings.binding_protocol = negotiating_prot;
+    settings.max_failcount = 5;
 }
 
 /*
@@ -4689,6 +4690,8 @@ int main (int argc, char **argv) {
           "O:"  /* log file name */
           "X"   /* run in mcmux compatiblity mode */
           "V:"  /* connect to VBS server for vbucket map */
+          "x:"  /* max connection fails for reporting to VBS */
+
         ))) {
         switch (c) {
         case 'a':
@@ -4835,6 +4838,10 @@ int main (int argc, char **argv) {
         case 'V' :
             settings.enable_vbs_mode = true;
             cproxy_cfg = strdup(optarg);
+            break;
+
+        case 'x' :
+            settings.max_failcount = atoi(optarg);
             break;
 
         default:

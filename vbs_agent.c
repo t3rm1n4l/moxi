@@ -10,6 +10,7 @@
 #define INIT_CMD    "{\"Agent\":\"MOXI\"}"
 #define OK_CMD      "{\"Cmd\":\"CONFIG\", \"Status\":\"OK\"}"
 #define ALIVE_CMD   "{\"Cmd\":\"ALIVE\"}"
+#define FAIL_CMD    "{\"Cmd\":\"FAIL\", \"Destination\":\"%s\"}"
 
 int connect_server(vbs_config_t *config);
 int read_socket(int fd, char **buf, int heartbeat);
@@ -151,8 +152,25 @@ retry:
 
     // main config loop. Receive config command from moxi
     while (1) {
-
         int read_len = 0;
+        vbs_failmsg *msg;
+        int l;
+
+        // Read all failure messages for hosts reported by proxy and send them to VBS
+        while ((msg = vbs_peek_failentry()) != NULL) {
+            char hbuf[200];
+            l = snprintf(hbuf, 200, FAIL_CMD, msg->host);
+
+            moxi_log_write("Connection to server, %s failed after retries. Sending failure message to VBS", msg->host);
+            write_len(hbuf, vbs_fd);
+            if (write(vbs_fd, hbuf, l) < 0) {
+                moxi_log_write("ERROR: Unable to write to socket retry connection  %s\n", config->hostname);
+                close(vbs_fd);
+                goto retry;
+            }
+
+            vbs_remove_failentry();
+        }
 
         if ((read_len = read_socket(vbs_fd, &buf, hb_interval)) < 0) {
             moxi_log_write("ERROR: Unable to write to socket retry connection  %s\n", config->hostname);
@@ -218,6 +236,8 @@ int start_vbs_config(vbs_config_t config) {
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     vbsagent_stats.config_received = 0;
+    hostfailcounter_init();
+    vbs_failmsg_queue.head = vbs_failmsg_queue.tail = NULL;
 
     pthread_create(&thread, &attr, (void *)vbs_get_config, &config);
 
@@ -229,4 +249,94 @@ void proxy_stats_dump_vbsagent(ADD_STAT add_stats, conn *c, const char *prefix) 
     pthread_mutex_lock(&vbsagent_stats.mutex);
     APPEND_PREFIX_STAT("config_received", "%d", vbsagent_stats.config_received);
     pthread_mutex_unlock(&vbsagent_stats.mutex);
+}
+
+void vbs_add_failentry(vbs_failmsg *msg) {
+    pthread_mutex_lock(&vbs_failmsg_queue.mutex);
+
+    if (vbs_failmsg_queue.head == NULL) {
+        vbs_failmsg_queue.head = vbs_failmsg_queue.tail = msg;
+    } else {
+        vbs_failmsg_queue.tail->next = msg;
+        vbs_failmsg_queue.tail = msg;
+    }
+
+    pthread_mutex_unlock(&vbs_failmsg_queue.mutex);
+}
+
+vbs_failmsg  *vbs_peek_failentry() {
+    vbs_failmsg *entry;
+    pthread_mutex_lock(&vbs_failmsg_queue.mutex);
+    entry = vbs_failmsg_queue.head;
+    pthread_mutex_unlock(&vbs_failmsg_queue.mutex);
+    return entry;
+}
+
+void vbs_remove_failentry() {
+    vbs_failmsg *entry;
+
+    pthread_mutex_lock(&vbs_failmsg_queue.mutex);
+    if (vbs_failmsg_queue.head == vbs_failmsg_queue.tail) {
+
+        if (vbs_failmsg_queue.tail == NULL) {
+            entry = NULL;
+        } else {
+            entry = vbs_failmsg_queue.head;
+            vbs_failmsg_queue.head = vbs_failmsg_queue.tail = NULL;
+        }
+    } else {
+        entry = vbs_failmsg_queue.head;
+        vbs_failmsg_queue.head = entry->next;
+    }
+
+    pthread_mutex_unlock(&vbs_failmsg_queue.mutex);
+
+    assert(entry != NULL);
+
+    free(entry->host);
+    free(entry);
+}
+
+void vbs_notify_hostfail(char const *host_ident) {
+    char *end_marker;
+    int len;
+    vbs_failmsg *msg = calloc(sizeof(vbs_failmsg), 1);
+
+    end_marker = strchr(host_ident, ':');
+    end_marker = strchr(end_marker+1, ':');
+    len = end_marker - host_ident;
+
+    msg->host = malloc(len+1);
+    strncpy(msg->host, host_ident, len);
+    msg->host[len] = '\0';
+    vbs_add_failentry(msg);
+}
+
+
+void hostfailcounter_init() {
+    pthread_mutex_lock(&hostfail_counter.mutex);
+    hostfail_counter.map = genhash_init(128, strhash_ops);
+    pthread_mutex_unlock(&hostfail_counter.mutex);
+}
+
+volatile uint32_t *hostfailcounter_addhost(char *h) {
+    void *entry;
+    pthread_mutex_lock(&hostfail_counter.mutex);
+
+    entry = genhash_find(hostfail_counter.map, h);
+    if (entry == NULL) {
+        entry = calloc(sizeof(uint32_t),1);
+        genhash_update(hostfail_counter.map, h, entry);
+    }
+
+    pthread_mutex_unlock(&hostfail_counter.mutex);
+    return (uint32_t *) entry;
+}
+
+uint32_t hostfailcounter_incr(volatile uint32_t *cntr) {
+    return __sync_add_and_fetch(cntr, 1);
+}
+
+bool hostfailcounter_reset(volatile uint32_t *cntr, uint32_t val) {
+    return __sync_bool_compare_and_swap(cntr, val, 0);
 }

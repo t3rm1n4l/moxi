@@ -323,6 +323,7 @@ struct settings {
     bool enable_mcmux_mode; /* enable mcmux compatiblity mode, disables libvbucket/libmemcached support */
     bool enable_vbs_mode;   /* enable zynga vbucket server mode. moxi will download vbucket map from vbs server */
     char *vbs_server_addr;  /* ip:port of vbs server */
+    int  max_failcount; /* Maximum failed reconnects to report failure to VBS */
 };
 
 extern struct stats stats;

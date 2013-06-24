@@ -13,6 +13,7 @@
 #include "cproxy.h"
 #include "work.h"
 #include "log.h"
+#include "vbs_agent.h"
 
 #ifndef MOXI_BLOCKING_CONNECT
 #define MOXI_BLOCKING_CONNECT false
@@ -3162,6 +3163,11 @@ bool cproxy_on_connect_downstream_conn(conn *c) {
             }
 
             zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+            if (settings.enable_vbs_mode) {
+                uint32_t errcount;
+                errcount = *conns->num_connect_fails;
+                hostfailcounter_reset(conns->num_connect_fails, errcount);
+            }
 
             //Options, if supported, not yet received.  Issues options to downstream connection.
             if (settings.enable_mcmux_mode == false) {
@@ -3187,6 +3193,16 @@ bool cproxy_on_connect_downstream_conn(conn *c) {
 
 cleanup:
     d->ptd->stats.stats.tot_downstream_connect_failed++;
+    zstored_downstream_conns *conns = zstored_get_downstream_conns(c->thread, c->host_ident);
+
+    if (settings.enable_vbs_mode) {
+        uint32_t errcount;
+        errcount = hostfailcounter_incr(conns->num_connect_fails);
+        if (errcount >= settings.max_failcount) {
+            hostfailcounter_reset(conns->num_connect_fails, errcount);
+            vbs_notify_hostfail(c->host_ident);
+        }
+    }
 
     k = delink_from_downstream_conns(c);
     if (k >= 0) {
@@ -3246,6 +3262,11 @@ zstored_downstream_conns *zstored_get_downstream_conns(LIBEVENT_THREAD *thread,
     zstored_downstream_conns *conns = genhash_find(conn_hash, host_ident);
     if (conns == NULL) {
         conns = calloc(1, sizeof(zstored_downstream_conns));
+
+        if (settings.enable_vbs_mode) {
+            conns->num_connect_fails = hostfailcounter_addhost(host_ident);
+        }
+
         if (conns != NULL) {
             conns->host_ident = strdup(host_ident);
             conns->got_options = false;
