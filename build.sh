@@ -39,7 +39,7 @@ if [ ! -e "$SOURCE/libvbucket" ];
 then
     echo Building libvbucket...
     mkdir -p $SOURCE/libvbucket
-    git clone git@github-ca.corp.zynga.com:slakshman/libvbucket.git $SOURCE/libvbucket
+    git clone git://github.com/zbase/libvbucket.git $SOURCE/libvbucket
     (cd $SOURCE/libvbucket && ./config/autorun.sh && ./configure --prefix=$PREFIX && make install)
 fi
 
@@ -47,8 +47,8 @@ if [ ! -e "$SOURCE/libmemcached" ];
 then
    echo Building libmemcached
    mkdir -p $SOURCE/libmemcached
-   git clone git@github-ca.corp.zynga.com:membase/libmemcached.git $SOURCE/libmemcached
-   (cd $SOURCE/libmemcached && ./config/autorun.sh && ./configure --prefix=$PREFIX --enable-isasl --with-libevent=$PREFIX --without-memcached && make install)
+   git clone git://github.com/zbase/libmemcached.git $SOURCE/libmemcached
+   (cd $SOURCE/libmemcached && ./config/autorun.sh && ./configure --prefix=$PREFIX --without-memcached && make install)
 fi
 
 echo Building moxi...
